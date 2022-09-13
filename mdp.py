@@ -184,7 +184,10 @@ def draw(grid, mdp, policy, policyOnly, name):
 
                 isPolicy = begin in policy and policy[begin] == action
                 if isPolicy:
-                    color = "black"
+                    if policyOnly and probability >= 0.9:
+                        color = "blue"
+                    else:
+                        color = "black"
                 if not policyOnly or isPolicy:
                     G.add_edge(begin, end, prob=probability, label=f"{action}: " + "{:.2f}".format(probability), color=color, fontcolor=color)
 
