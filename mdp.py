@@ -10,6 +10,8 @@ from networkx.drawing.nx_agraph import graphviz_layout, to_agraph
 import colorsys
 import math
 
+import os
+
 import time
 
 class MDP:
@@ -318,6 +320,9 @@ mdp = createMDP(grid)
 policy = valueIteration(grid, mdp, 0.9, 1e-20, int(1e4))
 print(policy)
 
-draw(grid, mdp, policy, False, "multi")
-draw(grid, mdp, policy, True, "policy")
+if not os.path.exists("output/"):
+    os.makedirs("output/")
+
+draw(grid, mdp, policy, False, "output/multi")
+draw(grid, mdp, policy, True, "output/policy")
 
