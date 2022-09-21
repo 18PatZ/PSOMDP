@@ -39,9 +39,9 @@ class MDP:
 
 #goalReward = 100
 #stateReward = 0
-goalActionReward = 1000
-noopReward = -2
-wallPenalty = -0
+goalActionReward = 100
+noopReward = 0
+wallPenalty = -5
 movePenalty = -1
 
 TYPE_STATE = 0
@@ -210,9 +210,9 @@ def createCompositeMDP(mdp, discount, checkin_period):
                 for action in mdp.actions:
                     prob_chain = prevPeriodMDP.transitions[state][prev_action_sequence][end_state]
 
-                    if state in mdp.transitions and action in mdp.transitions[state]:
-                        for new_end_state in mdp.transitions[state][action].keys():
-                            prob_additional = mdp.transitions[state][action][new_end_state]
+                    if end_state in mdp.transitions and action in mdp.transitions[end_state]:
+                        for new_end_state in mdp.transitions[end_state][action].keys():
+                            prob_additional = mdp.transitions[end_state][action][new_end_state]
 
                             extended_action_sequence = prev_action_sequence + (action,)
 
@@ -410,8 +410,8 @@ grid = [
 
 mdp = createMDP(grid)
 
-checkin_period = 2
-compMDP = createCompositeMDP(mdp, 0.3, checkin_period)
+checkin_period = 3
+compMDP = createCompositeMDP(mdp, 0.9, checkin_period)
 print("Actions:",len(mdp.actions),"->",len(compMDP.actions))
 
 policy = valueIteration(grid, compMDP, 0.9, 1e-20, int(1e4))
@@ -423,3 +423,7 @@ if not os.path.exists("output/"):
 draw(grid, compMDP, policy, False, "output/multi"+str(checkin_period))
 draw(grid, compMDP, policy, True, "output/policy"+str(checkin_period))
 
+# s = compMDP.states[0]
+# for action in compMDP.transitions[s].keys():
+#     for end_state in compMDP.transitions[s][action].keys():
+#         print(s,action,"->",end_state,"is",compMDP.transitions[s][action][end_state])
