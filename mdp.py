@@ -41,7 +41,7 @@ class MDP:
 #stateReward = 0
 goalActionReward = 100
 noopReward = 0
-wallPenalty = -5
+wallPenalty = -50000
 movePenalty = -1
 
 TYPE_STATE = 0
@@ -131,15 +131,23 @@ def createMDP(grid):
                     hit_wall_left = hit_wall_left or hit_wall
                     hit_wall_right = hit_wall_right or hit_wall
 
-                    addOrSet(mdp.transitions[state][direction], new_state, 0.9)
-                    addOrSet(mdp.transitions[state][direction], new_state_left, 0.05)
-                    addOrSet(mdp.transitions[state][direction], new_state_right, 0.05)
+                    prob = 0.9
+
+                    addOrSet(mdp.transitions[state][direction], new_state, prob)
+                    addOrSet(mdp.transitions[state][direction], new_state_left, (1 - prob)/2)
+                    addOrSet(mdp.transitions[state][direction], new_state_right, (1 - prob)/2)
 
                     reward = (
-                        0.9 * ((wallPenalty if hit_wall else movePenalty)) + 
-                        0.05 * ((wallPenalty if hit_wall_left else movePenalty)) + 
-                        0.05 * ((wallPenalty if hit_wall_right else movePenalty))
+                        prob * ((wallPenalty if hit_wall else movePenalty)) + 
+                        (1 - prob)/2 * ((wallPenalty if hit_wall_left else movePenalty)) + 
+                        (1 - prob)/2 * ((wallPenalty if hit_wall_right else movePenalty))
                     )
+
+                    # if y == 5 and x == 2:
+                    #     print("\n",state, direction,new_state,hit_wall)
+                    #     print("DRIFT LEFT", new_state_left, hit_wall_left)
+                    #     print("DRIFT RIGHT", new_state_right, hit_wall_right)
+                    #     print("REWARD", reward)
 
                     mdp.rewards[state][direction] = reward
 
@@ -252,7 +260,15 @@ def createCompositeMDP(mdp, discount, checkin_period):
     return compMDP
 
 
-def draw(grid, mdp, policy, policyOnly, name):
+def draw(grid, mdp, values, policy, policyOnly, name):
+
+    max_value = None
+    min_value = None
+
+    if len(values) > 0:
+        min_value = min(values.values())
+        max_value = max(values.values())
+
     G = nx.MultiDiGraph()
 
     #G.add_node("A")
@@ -273,19 +289,34 @@ def draw(grid, mdp, policy, policyOnly, name):
 
     for begin in mdp.transitions.keys():
         for action in mdp.transitions[begin].keys():
-            for end in mdp.transitions[begin][action].keys():
-                probability = mdp.transitions[begin][action][end]
 
-                color = fourColor(begin)
+            maxProb = -1
+            maxProbEnd = None
 
-                isPolicy = begin in policy and policy[begin] == action
-                if isPolicy:
-                    if policyOnly and probability >= 0.9:
-                        color = "blue"
-                    else:
-                        color = "black"
-                if not policyOnly or isPolicy:
+            isPolicy = begin in policy and policy[begin] == action
+
+            if not policyOnly or isPolicy:
+                for end in mdp.transitions[begin][action].keys():
+                    probability = mdp.transitions[begin][action][end]
+
+                    if probability > maxProb:
+                        maxProb = probability
+                        maxProbEnd = end
+
+                    color = fourColor(begin)
+
+                    if isPolicy:
+                        color = "grey"
+                        #if policyOnly and probability >= 0.3:#0.9:
+                        #    color = "blue"
+                        #else:
+                        #    color = "black"
                     G.add_edge(begin, end, prob=probability, label=f"{action}: " + "{:.2f}".format(probability), color=color, fontcolor=color)
+
+            if policyOnly and maxProbEnd is not None:
+                color = "blue"
+                G.remove_edge(begin, maxProbEnd)
+                G.add_edge(begin, maxProbEnd, prob=maxProb, label=f"{action}: " + "{:.2f}".format(maxProb), color=color, fontcolor=color)
 
     # Build plot
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -320,10 +351,29 @@ def draw(grid, mdp, policy, policyOnly, name):
 
         state_type = grid[node[1]][node[0]]
 
-        color = "#FFA500" if state_type == TYPE_STATE else ("#6a0dad" if state_type == TYPE_WALL else "#00FFFF")
         n = A.get_node(node)
         n.attr['color'] = fourColor(node)
-        n.attr['fillcolor']=color
+        
+        color = None
+        if state_type == TYPE_WALL:
+            color = "#6a0dad"
+        elif min_value is None and state_type == TYPE_GOAL:
+            color = "#00FFFF"
+        elif min_value is None:
+            color = "#FFA500"
+        else:
+            value = values[node]
+            frac = (value - min_value) / (max_value - min_value)
+            hue = frac * 250.0 / 360.0 # red 0, blue 1
+
+            col = colorsys.hsv_to_rgb(hue, 1, 1)
+            col = (int(col[0] * 255), int(col[1] * 255), int(col[2] * 255))
+            color = '#%02x%02x%02x' % col
+
+            # if node == (2, 5) or state_type == TYPE_GOAL:
+            #     print(value)
+        
+        n.attr['fillcolor'] = color
 
         #frac = G.nodes[node]['mass'] / 400
         # col = (0, 0, int(frac * 255))
@@ -367,9 +417,18 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
             max_expected = 0
             for action in mdp.actions:
                 expected_value = mdp.rewards[state][action]
+                future_value = 0
+
                 for end_state in mdp.transitions[state][action].keys():
                     prob = mdp.transitions[state][action][end_state]
-                    expected_value += discount * prob * prev_values[end_state]
+                    future_value += discount * prob * prev_values[end_state]
+
+                # if state == (2,5):
+                #     print(action,"action reward",expected_value)
+                #     print(action,"future reward",future_value)
+                #     print(action,"total value",expected_value)
+
+                expected_value += future_value
 
                 max_expected = max(max_expected, expected_value)
             values[state] = max_expected
@@ -398,30 +457,59 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
                 max_expected = expected_value
         policy[state] = best_action
 
-    return policy
+    return policy, values
 
+
+# grid = [
+#     [0, 0, 0, 0, 1, 0, 2],
+#     [0, 0, 1, 0, 0, 0, 0],
+#     [0, 0, 1, 0, 1, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0]
+# ]
 
 grid = [
-    [0, 0, 0, 0, 1, 0, 2],
-    [0, 0, 1, 0, 0, 0, 0],
-    [0, 0, 1, 0, 1, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0]
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 2, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
 ]
+
+start = time.time()
 
 mdp = createMDP(grid)
 
-checkin_period = 3
-compMDP = createCompositeMDP(mdp, 0.9, checkin_period)
+end = time.time()
+print("MDP creation time:", end - start)
+
+discount = 0.5
+checkin_period = 5
+compMDP = createCompositeMDP(mdp, discount, checkin_period)
 print("Actions:",len(mdp.actions),"->",len(compMDP.actions))
 
-policy = valueIteration(grid, compMDP, 0.9, 1e-20, int(1e4))
+end2 = time.time()
+print("MDP composite time:", end2 - end)
+
+policy, values = valueIteration(grid, compMDP, discount, 1e-6, int(1e4))#1e-20, int(1e4))
 print(policy)
 
-if not os.path.exists("output/"):
-    os.makedirs("output/")
+end3 = time.time()
+print("MDP value iteration time:", end3 - end2)
+print("MDP total time:", end3 - start)
 
-draw(grid, compMDP, policy, False, "output/multi"+str(checkin_period))
-draw(grid, compMDP, policy, True, "output/policy"+str(checkin_period))
+# if not os.path.exists("output/"):
+#     os.makedirs("output/")
+
+# draw(grid, compMDP, values, {}, False, "output/multi"+str(checkin_period))
+draw(grid, compMDP, values, policy, True, "output/policy"+str(checkin_period))
+
 
 # s = compMDP.states[0]
 # for action in compMDP.transitions[s].keys():
