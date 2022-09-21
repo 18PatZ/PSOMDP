@@ -37,10 +37,11 @@ class MDP:
             return 0
         return self.rewards[state][action]
 
-goalReward = 100
-stateReward = 0
-noopReward = 0
-wallPenalty = -5
+#goalReward = 100
+#stateReward = 0
+goalActionReward = 1000
+noopReward = -2
+wallPenalty = -0
 movePenalty = -1
 
 TYPE_STATE = 0
@@ -114,7 +115,7 @@ def createMDP(grid):
                 
                 for action in mdp.actions:
                     mdp.transitions[state][action][state] = 1
-                    mdp.rewards[state][action] = noopReward#goalReward # goal infinitely loops onto itself
+                    mdp.rewards[state][action] = goalActionReward # goal infinitely loops onto itself
 
             else:
                 mdp.transitions[state]["NO-OP"][state] = 1 # no-op loops back to itself
@@ -156,6 +157,99 @@ def fourColor(state):
     else:
         color = "#000088" if state[1] % 2 == 0 else "#888800"
     return color
+
+
+def convertSingleStepMDP(mdp):
+    compMDP = MDP([], [], {}, {}, [])
+
+    compMDP.states = mdp.states.copy()
+    compMDP.terminals = mdp.terminals.copy()
+
+    for action in mdp.actions:
+        compMDP.actions.append((action,)) # 1-tuple
+
+    for state in mdp.transitions.keys():
+        compMDP.transitions[state] = {}
+        for action in mdp.transitions[state].keys():
+            compMDP.transitions[state][(action,)] = {}
+            for end_state in mdp.transitions[state][action].keys():
+                prob = mdp.transitions[state][action][end_state]
+                compMDP.transitions[state][(action,)][end_state] = prob
+
+    for state in mdp.rewards.keys():
+        compMDP.rewards[state] = {}
+        for action in mdp.rewards[state].keys():
+            reward = mdp.rewards[state][action]
+            compMDP.rewards[state][(action,)] = reward
+
+    return compMDP
+
+def createCompositeMDP(mdp, discount, checkin_period):
+    if checkin_period == 1:
+        return convertSingleStepMDP(mdp)
+    
+    prevPeriodMDP = createCompositeMDP(mdp, discount, checkin_period-1)
+
+    compMDP = MDP([], [], {}, {}, [])
+
+    compMDP.states = mdp.states.copy()
+    compMDP.terminals = mdp.terminals.copy()
+
+    for action_sequence in prevPeriodMDP.actions:
+        for action in mdp.actions:
+            extended_action_sequence = action_sequence + (action,) # extend tuple
+            compMDP.actions.append(extended_action_sequence)
+
+    for state in prevPeriodMDP.transitions.keys():
+        compMDP.transitions[state] = {}
+        for prev_action_sequence in prevPeriodMDP.transitions[state].keys():
+            for end_state in prevPeriodMDP.transitions[state][prev_action_sequence].keys():
+                # looping through every state-actionsequence-state chain in the previous step MDP
+                # now extend chain by one action by multiplying transition probability of previous chain end state to new end state through action
+
+                for action in mdp.actions:
+                    prob_chain = prevPeriodMDP.transitions[state][prev_action_sequence][end_state]
+
+                    if state in mdp.transitions and action in mdp.transitions[state]:
+                        for new_end_state in mdp.transitions[state][action].keys():
+                            prob_additional = mdp.transitions[state][action][new_end_state]
+
+                            extended_action_sequence = prev_action_sequence + (action,)
+
+                            extended_prob = prob_chain * prob_additional
+
+                            if extended_action_sequence not in compMDP.transitions[state]:
+                                compMDP.transitions[state][extended_action_sequence] = {}
+                            if new_end_state not in compMDP.transitions[state][extended_action_sequence]:
+                                compMDP.transitions[state][extended_action_sequence][new_end_state] = 0
+
+                            # the same action sequence might diverge to two different states then converge again, so sum probabilities
+                            compMDP.transitions[state][extended_action_sequence][new_end_state] += extended_prob
+
+    for state in prevPeriodMDP.rewards.keys():
+        compMDP.rewards[state] = {}
+        for prev_action_sequence in prevPeriodMDP.rewards[state].keys():
+            prev_reward = prevPeriodMDP.rewards[state][prev_action_sequence]
+            
+            for action in mdp.actions:
+                if action in mdp.rewards[end_state]:
+                    # extend chain by one action
+                    extended_action_sequence = prev_action_sequence + (action,)
+
+                    extension_reward = 0
+
+                    for end_state in prevPeriodMDP.transitions[state][prev_action_sequence].keys():
+                        if end_state in mdp.rewards:
+                            # possible end states of the chain
+                            prob_end_state = prevPeriodMDP.transitions[state][prev_action_sequence][end_state] # probability that chain ends in this state
+                            extension_reward += prob_end_state * mdp.rewards[end_state][action]
+
+                    step = len(prev_action_sequence)
+                    discount_factor = pow(discount, step)
+                    extended_reward = prev_reward + discount_factor * extension_reward
+                    compMDP.rewards[state][extended_action_sequence] = extended_reward
+
+    return compMDP
 
 
 def draw(grid, mdp, policy, policyOnly, name):
@@ -263,14 +357,13 @@ def draw(grid, mdp, policy, policyOnly, name):
 
 def valueIteration(grid, mdp, discount, threshold, max_iterations):
 
-    values = {state: (goalReward if grid[state[1]][state[0]] == TYPE_GOAL else stateReward) for state in mdp.states}
+    #values = {state: (goalReward if grid[state[1]][state[0]] == TYPE_GOAL else stateReward) for state in mdp.states}
+    values = {state: 0 for state in mdp.states}
 
     for iteration in range(max_iterations):
         prev_values = values.copy()
         
         for state in mdp.states:
-            if grid[state[1]][state[0]] == TYPE_GOAL:
-                continue # todo fix this duct tape thing
             max_expected = 0
             for action in mdp.actions:
                 expected_value = mdp.rewards[state][action]
@@ -317,12 +410,16 @@ grid = [
 
 mdp = createMDP(grid)
 
-policy = valueIteration(grid, mdp, 0.9, 1e-20, int(1e4))
+checkin_period = 2
+compMDP = createCompositeMDP(mdp, 0.3, checkin_period)
+print("Actions:",len(mdp.actions),"->",len(compMDP.actions))
+
+policy = valueIteration(grid, compMDP, 0.9, 1e-20, int(1e4))
 print(policy)
 
 if not os.path.exists("output/"):
     os.makedirs("output/")
 
-draw(grid, mdp, policy, False, "output/multi")
-draw(grid, mdp, policy, True, "output/policy")
+draw(grid, compMDP, policy, False, "output/multi"+str(checkin_period))
+draw(grid, compMDP, policy, True, "output/policy"+str(checkin_period))
 
