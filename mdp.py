@@ -39,8 +39,8 @@ class MDP:
 
 #goalReward = 100
 #stateReward = 0
-goalActionReward = 100
-noopReward = 0
+goalActionReward = 10000
+noopReward = -1
 wallPenalty = -50000
 movePenalty = -1
 
@@ -131,7 +131,7 @@ def createMDP(grid):
                     hit_wall_left = hit_wall_left or hit_wall
                     hit_wall_right = hit_wall_right or hit_wall
 
-                    prob = 0.9
+                    prob = 0.4
 
                     addOrSet(mdp.transitions[state][direction], new_state, prob)
                     addOrSet(mdp.transitions[state][direction], new_state_left, (1 - prob)/2)
@@ -260,7 +260,7 @@ def createCompositeMDP(mdp, discount, checkin_period):
     return compMDP
 
 
-def draw(grid, mdp, values, policy, policyOnly, name):
+def draw(grid, mdp, values, policy, policyOnly, drawMinorPolicyEdges, name):
 
     max_value = None
     min_value = None
@@ -303,20 +303,26 @@ def draw(grid, mdp, values, policy, policyOnly, name):
                         maxProb = probability
                         maxProbEnd = end
 
+                for end in mdp.transitions[begin][action].keys():
+                    probability = mdp.transitions[begin][action][end]
+
                     color = fourColor(begin)
 
                     if isPolicy:
                         color = "grey"
+                        if maxProbEnd is not None and end == maxProbEnd:
+                            color = "blue"
                         #if policyOnly and probability >= 0.3:#0.9:
                         #    color = "blue"
                         #else:
                         #    color = "black"
-                    G.add_edge(begin, end, prob=probability, label=f"{action}: " + "{:.2f}".format(probability), color=color, fontcolor=color)
+                    if not policyOnly or drawMinorPolicyEdges or (maxProbEnd is None or end == maxProbEnd):
+                        G.add_edge(begin, end, prob=probability, label=f"{action}: " + "{:.2f}".format(probability), color=color, fontcolor=color)
 
-            if policyOnly and maxProbEnd is not None:
-                color = "blue"
-                G.remove_edge(begin, maxProbEnd)
-                G.add_edge(begin, maxProbEnd, prob=maxProb, label=f"{action}: " + "{:.2f}".format(maxProb), color=color, fontcolor=color)
+            # if policyOnly and maxProbEnd is not None:
+            #     color = "blue"
+            #     G.remove_edge(begin, maxProbEnd)
+            #     G.add_edge(begin, maxProbEnd, prob=maxProb, label=f"{action}: " + "{:.2f}".format(maxProb), color=color, fontcolor=color)
 
     # Build plot
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -410,11 +416,30 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
     #values = {state: (goalReward if grid[state[1]][state[0]] == TYPE_GOAL else stateReward) for state in mdp.states}
     values = {state: 0 for state in mdp.states}
 
+    # statesToIterate = []
+    # # order starting from goal nodes
+    # for state in mdp.states:
+    #     if grid[state[1]][state[0]] == TYPE_GOAL:
+    #         statesToIterate.append(state)
+    
+    # i = 0
+    # while i < len(statesToIterate):
+    #     end_state = statesToIterate[i]
+        
+    #     for action in mdp.actions:
+    #         for begin_state in mdp.states:
+    #             if begin_state not in statesToIterate:
+    #                 if end_state in mdp.transitions[begin_state][action].keys():
+    #                     statesToIterate.append(begin_state) # then branching out into neighbors that lead to this node
+    #     i += 1
+
+    # print("states to iterate", len(statesToIterate), "vs",len(mdp.states))
+
     for iteration in range(max_iterations):
         prev_values = values.copy()
-        
+
         for state in mdp.states:
-            max_expected = 0
+            max_expected = -1e20
             for action in mdp.actions:
                 expected_value = mdp.rewards[state][action]
                 future_value = 0
@@ -445,7 +470,7 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
     policy = {}
     for state in mdp.states:
         best_action = None
-        max_expected = -1
+        max_expected = -1e20
         for action in mdp.actions:
             expected_value = mdp.rewards[state][action]
             for end_state in mdp.transitions[state][action].keys():
@@ -468,18 +493,24 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
 # ]
 
 grid = [
-    [0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 2, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 ]
 
 start = time.time()
@@ -490,14 +521,14 @@ end = time.time()
 print("MDP creation time:", end - start)
 
 discount = 0.5
-checkin_period = 5
+checkin_period = 4
 compMDP = createCompositeMDP(mdp, discount, checkin_period)
 print("Actions:",len(mdp.actions),"->",len(compMDP.actions))
 
 end2 = time.time()
 print("MDP composite time:", end2 - end)
 
-policy, values = valueIteration(grid, compMDP, discount, 1e-6, int(1e4))#1e-20, int(1e4))
+policy, values = valueIteration(grid, compMDP, discount, 1e-20, int(1e4))#1e-20, int(1e4))
 print(policy)
 
 end3 = time.time()
@@ -507,8 +538,8 @@ print("MDP total time:", end3 - start)
 # if not os.path.exists("output/"):
 #     os.makedirs("output/")
 
-# draw(grid, compMDP, values, {}, False, "output/multi"+str(checkin_period))
-draw(grid, compMDP, values, policy, True, "output/policy"+str(checkin_period))
+# draw(grid, compMDP, values, {}, False, True, "output/multi"+str(checkin_period))
+draw(grid, compMDP, values, policy, True, False, "output/policy"+str(checkin_period))
 
 
 # s = compMDP.states[0]
