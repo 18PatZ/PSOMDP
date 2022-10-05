@@ -41,7 +41,7 @@ class MDP:
 #goalReward = 100
 #stateReward = 0
 goalActionReward = 10000
-noopReward = -1
+noopReward = 0#-1
 wallPenalty = -50000
 movePenalty = -1
 
@@ -54,7 +54,7 @@ def clamp(state, grid):
     y = state[1]
 
     clamped = False
-    
+
     if x < 0:
         x = 0
         clamped = True
@@ -67,7 +67,7 @@ def clamp(state, grid):
     if y > len(grid) - 1:
         y = len(grid) - 1
         clamped = True
-    
+
     return (x, y), clamped
 
 cardinals = ["NORTH", "EAST", "SOUTH", "WEST"]
@@ -102,7 +102,7 @@ def createMDP(grid):
 
             if state_type == TYPE_WALL:
                 continue
-            
+
             mdp.states.append(state)
 
             mdp.transitions[state] = {}
@@ -110,10 +110,10 @@ def createMDP(grid):
                 mdp.transitions[state][action] = {}
 
             mdp.rewards[state] = {}
-            
+
             if state_type == TYPE_GOAL:
                 mdp.terminals.append(state)
-                
+
                 for action in mdp.actions:
                     mdp.transitions[state][action][state] = 1
                     mdp.rewards[state][action] = goalActionReward # goal infinitely loops onto itself
@@ -124,7 +124,7 @@ def createMDP(grid):
 
                 for dirInd in range(len(cardinals)):
                     direction = cardinals[dirInd]
-                    
+
                     new_state, hit_wall = attemptMove(grid, state, dirInd)
                     new_state_left, hit_wall_left = attemptMove(grid, new_state, driftAction(dirInd, -1))
                     new_state_right, hit_wall_right = attemptMove(grid, new_state, driftAction(dirInd, 1))
@@ -139,8 +139,8 @@ def createMDP(grid):
                     addOrSet(mdp.transitions[state][direction], new_state_right, (1 - prob)/2)
 
                     reward = (
-                        prob * ((wallPenalty if hit_wall else movePenalty)) + 
-                        (1 - prob)/2 * ((wallPenalty if hit_wall_left else movePenalty)) + 
+                        prob * ((wallPenalty if hit_wall else movePenalty)) +
+                        (1 - prob)/2 * ((wallPenalty if hit_wall_left else movePenalty)) +
                         (1 - prob)/2 * ((wallPenalty if hit_wall_right else movePenalty))
                     )
 
@@ -152,7 +152,7 @@ def createMDP(grid):
 
                     mdp.rewards[state][direction] = reward
 
-    return mdp           
+    return mdp
 
 
 def stateToStr(state):
@@ -196,7 +196,7 @@ def convertSingleStepMDP(mdp):
 def createCompositeMDP(mdp, discount, checkin_period):
     if checkin_period == 1:
         return convertSingleStepMDP(mdp)
-    
+
     prevPeriodMDP = createCompositeMDP(mdp, discount, checkin_period-1)
     return extendCompositeMDP(mdp, discount, prevPeriodMDP)
 
@@ -241,7 +241,7 @@ def extendCompositeMDP(mdp, discount, prevPeriodMDP):
         compMDP.rewards[state] = {}
         for prev_action_sequence in prevPeriodMDP.rewards[state].keys():
             prev_reward = prevPeriodMDP.rewards[state][prev_action_sequence]
-            
+
             for action in mdp.actions:
                 if action in mdp.rewards[end_state]:
                     # extend chain by one action
@@ -348,7 +348,7 @@ def draw(grid, mdp, values, policy, policyOnly, drawMinorPolicyEdges, name):
     G.graph['edge'] = {'arrowsize': '0.6', 'splines': 'curved', 'fontsize':'10'}
     G.graph['graph'] = {'scale': '3'}
 
-    A = to_agraph(G) 
+    A = to_agraph(G)
 
     A.node_attr['style']='filled'
 
@@ -362,7 +362,7 @@ def draw(grid, mdp, values, policy, policyOnly, drawMinorPolicyEdges, name):
 
         n = A.get_node(node)
         n.attr['color'] = fourColor(node)
-        
+
         color = None
         if state_type == TYPE_WALL:
             color = "#6a0dad"
@@ -381,7 +381,7 @@ def draw(grid, mdp, values, policy, policyOnly, drawMinorPolicyEdges, name):
 
             # if node == (2, 5) or state_type == TYPE_GOAL:
             #     print(value)
-        
+
         n.attr['fillcolor'] = color
 
         #frac = G.nodes[node]['mass'] / 400
@@ -409,9 +409,9 @@ def draw(grid, mdp, values, policy, policyOnly, drawMinorPolicyEdges, name):
     for k,v in layout.items():
         A.get_node(k).attr['pos']='{},{}!'.format(v[0]*m,v[1]*m)
 
-    #A.layout('dot')                                                                 
+    #A.layout('dot')
     A.layout(prog='neato')
-    A.draw(name + '.png')#, prog="neato") 
+    A.draw(name + '.png')#, prog="neato")
 
 
 def valueIteration(grid, mdp, discount, threshold, max_iterations):
@@ -425,11 +425,11 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
         if grid[state[1]][state[0]] == TYPE_GOAL:
             statesToIterate.append(state)
 
-    # add rest 
+    # add rest
     for state in mdp.states:
         if grid[state[1]][state[0]] != TYPE_GOAL:
             statesToIterate.append(state)
-    
+
     # print("states to iterate", len(statesToIterate), "vs",len(mdp.states))
 
     for iteration in range(max_iterations):
@@ -454,7 +454,7 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
 
                 max_expected = max(max_expected, expected_value)
             values[state] = max_expected
-        
+
         new_values = np.array(list(values.values()))
         old_values = np.array(list(prev_values.values()))
         relative_value_difference = np.linalg.norm(new_values-old_values) / np.linalg.norm(new_values)
@@ -484,9 +484,10 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
 
 
 
-def qValueIteration(grid, mdp, discount, threshold, max_iterations):
+def qValueIteration(grid, mdp, discount, threshold, max_iterations, restricted_action_set = None):
 
     values = {state: {action: 0 for action in mdp.transitions[state].keys()} for state in mdp.states}
+    state_values = {state: 0 for state in mdp.states}
 
     statesToIterate = []
     # order starting from goal nodes
@@ -494,31 +495,36 @@ def qValueIteration(grid, mdp, discount, threshold, max_iterations):
         if grid[state[1]][state[0]] == TYPE_GOAL:
             statesToIterate.append(state)
 
-    # add rest 
+    # add rest
     for state in mdp.states:
         if grid[state[1]][state[0]] != TYPE_GOAL:
             statesToIterate.append(state)
-    
+
     # print("states to iterate", len(statesToIterate), "vs",len(mdp.states))
 
     for iteration in range(max_iterations):
-        # prev_values = values.copy() # this is only a shallow copy, fix
-        old_values = np.array(list([np.max(list(values[state].values())) for state in mdp.states]))
+        prev_state_values = state_values.copy() # this is only a shallow copy, fix
+        # old_values = np.array(list([np.max(list(values[state].values())) for state in mdp.states]))
 
         for state in statesToIterate:
             for action in mdp.actions:
+                if restricted_action_set is not None and action not in restricted_action_set[state]:
+                    # print("skipping",state,action,len(restricted_action_set[state]),restricted_action_set[state])
+                    continue
+
                 expected_value = mdp.rewards[state][action]
                 future_value = 0
 
                 for end_state in mdp.transitions[state][action].keys():
                     prob = mdp.transitions[state][action][end_state]
-                    
-                    maxQ = None
-                    for action2 in mdp.actions:
-                        q = values[end_state][action2] # supposed to use previous values?
-                        if maxQ is None or q > maxQ:
-                            maxQ = q
 
+                    # maxQ = None
+                    # for action2 in mdp.actions:
+                    #     q = values[end_state][action2] # supposed to use previous values?
+                    #     if maxQ is None or q > maxQ:
+                    #         maxQ = q
+
+                    maxQ = prev_state_values[end_state]
                     if maxQ is None:
                         maxQ = 0
 
@@ -527,9 +533,14 @@ def qValueIteration(grid, mdp, discount, threshold, max_iterations):
                 expected_value += future_value
 
                 values[state][action] = expected_value
-        
-        new_values = np.array(list([np.max(list(values[state].values())) for state in mdp.states]))
-        
+
+                prevMaxQ = state_values[state]
+                if prevMaxQ is None or expected_value > prevMaxQ:
+                    state_values[state] = expected_value
+
+        # new_values = np.array(list([np.max(list(values[state].values())) for state in mdp.states]))
+        new_values = np.array(list(state_values.values()))
+        old_values = np.array(list(prev_state_values.values()))
         relative_value_difference = np.linalg.norm(new_values-old_values) / np.linalg.norm(new_values)
 
         print(f"Iteration {iteration}: {relative_value_difference}")
@@ -543,11 +554,18 @@ def qValueIteration(grid, mdp, discount, threshold, max_iterations):
         best_action = None
         max_expected = None
         for action in mdp.actions:
+            if restricted_action_set is not None and action not in restricted_action_set[state]:
+                continue
+
             expected_value = values[state][action]
 
             if max_expected is None or expected_value > max_expected:
                 best_action = action
                 max_expected = expected_value
+
+        if max_expected is None:
+            max_expected = 0
+
         policy[state] = best_action
         state_values[state] = max_expected
 
@@ -558,24 +576,34 @@ def qValueIteration(grid, mdp, discount, threshold, max_iterations):
 def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iterations):
 
     compMDP = convertSingleStepMDP(base_mdp)
-    pruned_action_set = [action for action in compMDP.actions]
+    pruned_action_set = {state: [action for action in compMDP.actions] for state in base_mdp.states}
 
     upperBound = None
     lowerBound = None
 
-    for t in range(1, checkin_period):
+    for t in range(1, checkin_period+1):
         if t > 1:
-            compMDP.actions = pruned_action_set
+            # compMDP.actions = pruned_action_set
             compMDP = extendCompositeMDP(base_mdp, discount, compMDP)
-            pruned_action_set = compMDP.actions
-        
+            # pruned_action_set = compMDP.actions
+
+            for state in base_mdp.states:
+                extended_action_set = []
+                for prev_action_sequence in pruned_action_set[state]:
+                    for action in base_mdp.actions:
+                        extended_action_set.append(prev_action_sequence + (action,))
+                pruned_action_set[state] = extended_action_set
+
+        if t >= checkin_period:
+            break
+
         if checkin_period % t == 0: # is divisor
             # restricted_action_set = [action[:t] for action in compMDP.actions]
             # og_action_set = compMDP.actions
             # compMDP.actions = restricted_action_set
-            
+
             # policy, values, q_values = qValueIteration(grid, compMDP, discount, threshold, max_iterations)
-            
+
             # upperBound = {state: {} for state in mdp.states}
             # for state in compMDP.states:
             #     for action in compMDP.actions:
@@ -585,46 +613,51 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
             #             upperBound[state][prefix] = q_value
 
             discount_input = pow(discount, t)
-            policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations)
+            policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
             upperBound = q_values
-        
+
         else: # extend q-values?
             newUpper = {state: {} for state in mdp.states}
             for state in compMDP.states:
                 for action in compMDP.actions:
+                    if action not in pruned_action_set[state]:
+                        continue
                     prefix = action[:t]
                     prev_prefix = action[:(t-1)]
-                    
+
                     if prev_prefix in upperBound[state]:
                         newUpper[state][prefix] = upperBound[state][prev_prefix]
             upperBound = newUpper
 
         discount_input = pow(discount, checkin_period)
-        policy, state_values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations)
+        policy, state_values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
         lowerBound = state_values
 
+        tot = 0
         for state in base_mdp.states:
             toPrune = []
-            for action in pruned_action_set:
+            for action in pruned_action_set[state]:
                 prefix = action[:t]
-                print(prefix, upperBound[state][prefix], lowerBound[state])
+                # print(prefix, upperBound[state][prefix], lowerBound[state])
                 if upperBound[state][prefix] <= lowerBound[state]:
                     toPrune.append(prefix)
 
-        print("BnB pruning",len(toPrune),"/",len(pruned_action_set),"actions")
-        pruned_action_set = [action for action in pruned_action_set if action[:t] not in toPrune] # remove all actions with prefix
+            # print("BnB pruning",len(toPrune),"/",len(pruned_action_set[state]),"actions")
+            pruned_action_set[state] = [action for action in pruned_action_set[state] if action[:t] not in toPrune] # remove all actions with prefix
 
-        print("BnB Iteration",t,"/",checkin_period,":",len(pruned_action_set),"action prefixes")
+            tot += len(pruned_action_set[state])
 
-    compMDP.actions = pruned_action_set
-    compMDP = extendCompositeMDP(base_mdp, discount, compMDP)
+        print("BnB Iteration",t,"/",checkin_period,":",tot / len(base_mdp.states),"avg action prefixes")
+
+    # compMDP.actions = pruned_action_set
+    # compMDP = extendCompositeMDP(base_mdp, discount, compMDP)
 
     discount_input = pow(discount, checkin_period)
-    policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations)
+    policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
 
-    print(len(compMDP.actions),"actions vs ",pow(base_mdp.actions, checkin_period))
+    print(len(compMDP.actions),"actions vs",pow(len(base_mdp.actions), checkin_period))
 
-    return policy, values, q_values
+    return compMDP, policy, values, q_values
 
 
 # grid = [
@@ -662,14 +695,14 @@ mdp = createMDP(grid)
 end = time.time()
 print("MDP creation time:", end - start)
 
-discount = 0.5
-checkin_period = 2
+discount = 0.707106781#0.5
+checkin_period = 3
 
 policy = None
 values = None
 q_values = None
 
-bnb = True
+bnb = False
 
 if not bnb:
     compMDP = createCompositeMDP(mdp, discount, checkin_period)
@@ -679,14 +712,17 @@ if not bnb:
     print("MDP composite time:", end2 - end)
 
     # policy, values = valueIteration(grid, compMDP, discount, 1e-20, int(1e4))#1e-20, int(1e4))
-    policy, values, q_values = qValueIteration(grid, compMDP, discount, 1e-20, int(1e4))#1e-20, int(1e4))
+    discount_t = pow(discount, checkin_period)
+    policy, values, q_values = qValueIteration(grid, compMDP, discount_t, 1e-20, int(1e4))#1e-20, int(1e4))
     print(policy)
 
     end3 = time.time()
     print("MDP value iteration time:", end3 - end2)
     print("MDP total time:", end3 - start)
 else:
-    policy, values, q_values = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4))#1e-20, int(1e4))
+    compMDP, policy, values, q_values = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4))#1e-20, int(1e4))
+    print(policy)
+    
     end2 = time.time()
     print("MDP branch and bound time:", end2 - end)
     print("MDP total time:", end2 - start)
