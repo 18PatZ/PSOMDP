@@ -414,6 +414,128 @@ def draw(grid, mdp, values, policy, policyOnly, drawMinorPolicyEdges, name):
     A.draw(name + '.png')#, prog="neato")
 
 
+
+
+def drawBNBIteration(grid, mdp, ratios, upperBounds, lowerBounds, pruned, iteration, name):
+    G = nx.MultiDiGraph()
+
+    for state in mdp.states:
+        G.add_node(state)
+
+    for y in range(len(grid)):
+        for x in range(len(grid[y])):
+            state = (x, y)
+            state_type = grid[y][x]
+
+            if state_type == TYPE_WALL:
+                G.add_node(state)
+
+    upper_policy = None
+    lower_policy = None
+    pruned_q = None
+
+    if iteration < len(upperBounds):
+        upper_policy, upper_state_values = extractPolicyFromQ(mdp, upperBounds[iteration], mdp.states, {state: upperBounds[iteration][state].keys() for state in mdp.states})
+    if iteration < len(lowerBounds):
+        lower_policy, lower_state_values = extractPolicyFromQ(mdp, lowerBounds[iteration], mdp.states, {state: lowerBounds[iteration][state].keys() for state in mdp.states})
+    # if iteration < len(pruned):
+    #     pruned_q = pruned[iteration]
+
+
+    for begin in mdp.transitions.keys():
+        for action in mdp.transitions[begin].keys():
+
+            maxProb = -1
+            maxProbEnd = None
+
+            action_prefix = action[:(iteration+1)]
+
+            isUpperPolicy = upper_policy is not None and begin in upper_policy and upper_policy[begin] == action_prefix
+            isLowerPolicy = lower_policy is not None and begin in lower_policy and lower_policy[begin] == action_prefix
+            isPruned = pruned_q is not None and begin in pruned_q and action_prefix in pruned_q[begin]
+
+            if isUpperPolicy or isLowerPolicy or isPruned:
+                for end in mdp.transitions[begin][action].keys():
+                    probability = mdp.transitions[begin][action][end]
+
+                    if probability > maxProb:
+                        maxProb = probability
+                        maxProbEnd = end
+
+                for end in mdp.transitions[begin][action].keys():
+                    probability = mdp.transitions[begin][action][end]
+
+                    color = fourColor(begin)
+
+                    if isUpperPolicy:
+                        color = "blue"
+                    if isLowerPolicy:
+                        color = "green"
+                    if isPruned:
+                        color = "red"
+                    if maxProbEnd is None or end == maxProbEnd:
+                        G.add_edge(begin, end, prob=probability, label=f"{action}: " + "{:.2f}".format(probability), color=color, fontcolor=color)
+
+    # Build plot
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    layout = {}
+
+    ax.clear()
+    labels = {}
+    edge_labels = {}
+    color_map = []
+
+    G.graph['edge'] = {'arrowsize': '0.6', 'splines': 'curved', 'fontsize':'10'}
+    G.graph['graph'] = {'scale': '3'}
+
+    A = to_agraph(G)
+
+    A.node_attr['style']='filled'
+
+    for node in G.nodes():
+        labels[node] = f"{stateToStr(node)}"
+
+        layout[node] = (node[0], -node[1])
+
+        state_type = grid[node[1]][node[0]]
+
+        n = A.get_node(node)
+        n.attr['color'] = fourColor(node)
+
+        if node in ratios[iteration]:
+            n.attr['xlabel'] = "{:.2f}".format(ratios[iteration][node])
+
+        color = None
+        if state_type == TYPE_WALL:
+            color = "#6a0dad"
+        elif state_type == TYPE_GOAL:
+            color = "#00FFFF"
+        else:
+            value = ratios[iteration][node]
+            frac = value
+            hue = frac * 250.0 / 360.0 # red 0, blue 1
+
+            col = colorsys.hsv_to_rgb(hue, 1, 1)
+            col = (int(col[0] * 255), int(col[1] * 255), int(col[2] * 255))
+            color = '#%02x%02x%02x' % col
+
+        n.attr['fillcolor'] = color
+
+        color_map.append(color)
+
+    for s, e, d in G.edges(data=True):
+        edge_labels[(s, e)] = "{:.2f}".format(d['prob'])
+
+    m = 1.5
+    for k,v in layout.items():
+        A.get_node(k).attr['pos']='{},{}!'.format(v[0]*m,v[1]*m)
+
+    #A.layout('dot')
+    A.layout(prog='neato')
+    A.draw(name + '.png')#, prog="neato")
+
+
 def valueIteration(grid, mdp, discount, threshold, max_iterations):
 
     #values = {state: (goalReward if grid[state[1]][state[0]] == TYPE_GOAL else stateReward) for state in mdp.states}
@@ -482,6 +604,27 @@ def valueIteration(grid, mdp, discount, threshold, max_iterations):
     return policy, values
 
 
+def extractPolicyFromQ(mdp, values, statesToIterate, restricted_action_set):
+    policy = {}
+    state_values = {}
+    for state in statesToIterate:
+        best_action = None
+        max_expected = None
+        action_set = mdp.actions if restricted_action_set is None else restricted_action_set[state]
+        for action in action_set:
+            expected_value = values[state][action]
+
+            if max_expected is None or expected_value > max_expected:
+                best_action = action
+                max_expected = expected_value
+
+        if max_expected is None:
+            max_expected = 0
+
+        policy[state] = best_action
+        state_values[state] = max_expected
+
+    return policy, state_values
 
 
 def qValueIteration(grid, mdp, discount, threshold, max_iterations, restricted_action_set = None):
@@ -503,15 +646,13 @@ def qValueIteration(grid, mdp, discount, threshold, max_iterations, restricted_a
     # print("states to iterate", len(statesToIterate), "vs",len(mdp.states))
 
     for iteration in range(max_iterations):
+        start = time.time()
         prev_state_values = state_values.copy() # this is only a shallow copy, fix
         # old_values = np.array(list([np.max(list(values[state].values())) for state in mdp.states]))
 
         for state in statesToIterate:
-            for action in mdp.actions:
-                if restricted_action_set is not None and action not in restricted_action_set[state]:
-                    # print("skipping",state,action,len(restricted_action_set[state]),restricted_action_set[state])
-                    continue
-
+            action_set = mdp.actions if restricted_action_set is None else restricted_action_set[state]
+            for action in action_set:
                 expected_value = mdp.rewards[state][action]
                 future_value = 0
 
@@ -543,32 +684,32 @@ def qValueIteration(grid, mdp, discount, threshold, max_iterations, restricted_a
         old_values = np.array(list(prev_state_values.values()))
         relative_value_difference = np.linalg.norm(new_values-old_values) / np.linalg.norm(new_values)
 
-        print(f"Iteration {iteration}: {relative_value_difference}")
+        end = time.time()
+        print(f"Iteration {iteration}: {relative_value_difference}. Took",end-start)
 
         if relative_value_difference <= threshold:
             break
 
-    policy = {}
-    state_values = {}
-    for state in statesToIterate:
-        best_action = None
-        max_expected = None
-        for action in mdp.actions:
-            if restricted_action_set is not None and action not in restricted_action_set[state]:
-                continue
+    # policy = {}
+    # state_values = {}
+    # for state in statesToIterate:
+    #     best_action = None
+    #     max_expected = None
+    #     action_set = mdp.actions if restricted_action_set is None else restricted_action_set[state]
+    #     for action in action_set:
+    #         expected_value = values[state][action]
 
-            expected_value = values[state][action]
+    #         if max_expected is None or expected_value > max_expected:
+    #             best_action = action
+    #             max_expected = expected_value
 
-            if max_expected is None or expected_value > max_expected:
-                best_action = action
-                max_expected = expected_value
+    #     if max_expected is None:
+    #         max_expected = 0
 
-        if max_expected is None:
-            max_expected = 0
+    #     policy[state] = best_action
+    #     state_values[state] = max_expected
 
-        policy[state] = best_action
-        state_values[state] = max_expected
-
+    policy, state_values = extractPolicyFromQ(mdp, values, statesToIterate, restricted_action_set)
     return policy, state_values, values
 
 
@@ -581,7 +722,14 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
     upperBound = None
     lowerBound = None
 
+    ratios = []
+    upperBounds = []
+    lowerBounds = []
+    pruned = []
+    compMDPs = []
+
     for t in range(1, checkin_period+1):
+        start = time.time()
         if t > 1:
             # compMDP.actions = pruned_action_set
             compMDP = extendCompositeMDP(base_mdp, discount, compMDP)
@@ -633,6 +781,11 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
         policy, state_values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
         lowerBound = state_values
 
+        upperBounds.append(upperBound)
+        lowerBounds.append(q_values)
+
+        pr = {}
+
         tot = 0
         for state in base_mdp.states:
             toPrune = []
@@ -647,17 +800,35 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
 
             tot += len(pruned_action_set[state])
 
-        print("BnB Iteration",t,"/",checkin_period,":",tot / len(base_mdp.states),"avg action prefixes")
+            pr[state] = toPrune
+
+        pruned.append(pr)
+
+        ratios.append({state: (len(pruned_action_set[state]) / len(compMDP.actions)) for state in base_mdp.states})
+        compMDPs.append(compMDP)
+
+        # print("BnB Iteration",t,"/",checkin_period,":",tot / len(base_mdp.states),"avg action prefixes")
+        end = time.time()
+        print("BnB Iteration",t,"/",checkin_period,":", tot,"/",(len(base_mdp.states) * len(compMDP.actions)),"action prefixes. Took",end-start)
 
     # compMDP.actions = pruned_action_set
     # compMDP = extendCompositeMDP(base_mdp, discount, compMDP)
 
+    tot = 0
+    for state in base_mdp.states:
+        tot += len(pruned_action_set[state])
+
     discount_input = pow(discount, checkin_period)
+    # print("final",checkin_period,len(compMDP.actions),discount_input,threshold,max_iterations, tot,"/",(len(base_mdp.states) * len(compMDP.actions)))
+
+    start = time.time()
     policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
+    end = time.time()
 
-    print(len(compMDP.actions),"actions vs",pow(len(base_mdp.actions), checkin_period))
+    # print(len(compMDP.actions),"actions vs",pow(len(base_mdp.actions), checkin_period))
+    print("BnB Iteration",t,"/",checkin_period,":", tot,"/",(len(base_mdp.states) * len(compMDP.actions)),"action prefixes. Took",end-start)
 
-    return compMDP, policy, values, q_values
+    return compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs
 
 
 # grid = [
@@ -688,6 +859,22 @@ grid = [
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 ]
 
+# grid = [
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+#     [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+#     [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+#     [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+# ]
+
 start = time.time()
 
 mdp = createMDP(grid)
@@ -696,13 +883,13 @@ end = time.time()
 print("MDP creation time:", end - start)
 
 discount = 0.707106781#0.5
-checkin_period = 3
+checkin_period = 6
 
 policy = None
 values = None
 q_values = None
 
-bnb = False
+bnb = True
 
 if not bnb:
     compMDP = createCompositeMDP(mdp, discount, checkin_period)
@@ -713,25 +900,33 @@ if not bnb:
 
     # policy, values = valueIteration(grid, compMDP, discount, 1e-20, int(1e4))#1e-20, int(1e4))
     discount_t = pow(discount, checkin_period)
+    # print("final",checkin_period,len(compMDP.actions),discount_t,1e-20, int(1e4), (len(mdp.states) * len(compMDP.actions)))
     policy, values, q_values = qValueIteration(grid, compMDP, discount_t, 1e-20, int(1e4))#1e-20, int(1e4))
     print(policy)
 
     end3 = time.time()
     print("MDP value iteration time:", end3 - end2)
     print("MDP total time:", end3 - start)
+
+    draw(grid, compMDP, values, policy, True, False, "output/policy"+str(checkin_period)+"-vi")
 else:
-    compMDP, policy, values, q_values = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4))#1e-20, int(1e4))
+    compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4))#1e-20, int(1e4))
     print(policy)
     
     end2 = time.time()
     print("MDP branch and bound time:", end2 - end)
     print("MDP total time:", end2 - start)
 
+    for i in range(0, checkin_period-1):
+        drawBNBIteration(grid, compMDPs[i], ratios, upperBounds, lowerBounds, pruned, i, "output/policy"+str(checkin_period)+"-bnb-"+str(i+1))
+
+    draw(grid, compMDP, values, policy, True, False, "output/policy"+str(checkin_period)+"-bnb-f")
+
 # if not os.path.exists("output/"):
 #     os.makedirs("output/")
 
 # draw(grid, compMDP, values, {}, False, True, "output/multi"+str(checkin_period))
-draw(grid, compMDP, values, policy, True, False, "output/policy"+str(checkin_period))
+# draw(grid, compMDP, values, policy, True, False, "output/policy"+str(checkin_period))
 
 
 # s = compMDP.states[0]
