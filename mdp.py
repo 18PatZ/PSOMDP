@@ -14,6 +14,7 @@ import math
 import os
 
 import time
+import math
 
 class MDP:
     def __init__(self, states, actions, transitions, rewards, terminals):
@@ -40,10 +41,10 @@ class MDP:
 
 #goalReward = 100
 #stateReward = 0
-goalActionReward = 10000
-noopReward = 0#-1
-wallPenalty = -50000
-movePenalty = -1
+# goalActionReward = 10000
+# noopReward = 0#-1
+# wallPenalty = -50000
+# movePenalty = -1
 
 TYPE_STATE = 0
 TYPE_WALL = 1
@@ -91,7 +92,7 @@ def addOrSet(dictionary, key, val):
     else:
         dictionary[key] = val
 
-def createMDP(grid):
+def createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb):
 
     mdp = MDP([], ["NORTH", "EAST", "SOUTH", "WEST", "NO-OP"], {}, {}, [])
 
@@ -132,16 +133,16 @@ def createMDP(grid):
                     hit_wall_left = hit_wall_left or hit_wall
                     hit_wall_right = hit_wall_right or hit_wall
 
-                    prob = 0.4
+                    #prob = 0.4
 
-                    addOrSet(mdp.transitions[state][direction], new_state, prob)
-                    addOrSet(mdp.transitions[state][direction], new_state_left, (1 - prob)/2)
-                    addOrSet(mdp.transitions[state][direction], new_state_right, (1 - prob)/2)
+                    addOrSet(mdp.transitions[state][direction], new_state, moveProb)
+                    addOrSet(mdp.transitions[state][direction], new_state_left, (1 - moveProb)/2)
+                    addOrSet(mdp.transitions[state][direction], new_state_right, (1 - moveProb)/2)
 
                     reward = (
-                        prob * ((wallPenalty if hit_wall else movePenalty)) +
-                        (1 - prob)/2 * ((wallPenalty if hit_wall_left else movePenalty)) +
-                        (1 - prob)/2 * ((wallPenalty if hit_wall_right else movePenalty))
+                        moveProb * ((wallPenalty if hit_wall else movePenalty)) +
+                        (1 - moveProb)/2 * ((wallPenalty if hit_wall_left else movePenalty)) +
+                        (1 - moveProb)/2 * ((wallPenalty if hit_wall_right else movePenalty))
                     )
 
                     # if y == 5 and x == 2:
@@ -792,7 +793,7 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
             for action in pruned_action_set[state]:
                 prefix = action[:t]
                 # print(prefix, upperBound[state][prefix], lowerBound[state])
-                if upperBound[state][prefix] <= lowerBound[state]:
+                if upperBound[state][prefix] < lowerBound[state]:
                     toPrune.append(prefix)
 
             # print("BnB pruning",len(toPrune),"/",len(pruned_action_set[state]),"actions")
@@ -831,59 +832,198 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
     return compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs
 
 
-# grid = [
-#     [0, 0, 0, 0, 1, 0, 2],
-#     [0, 0, 1, 0, 0, 0, 0],
-#     [0, 0, 1, 0, 1, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0]
-# ]
+def smallGrid():
+    goalActionReward = 10000
+    noopReward = 0#-1
+    wallPenalty = -50000
+    movePenalty = -1
 
-grid = [
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-]
+    moveProb = 0.4
+    discount = 0.707106781#0.5
 
-# grid = [
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-#     [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-#     [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-#     [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-# ]
+    grid = [
+        [0, 0, 0, 0, 1, 0, 2],
+        [0, 0, 1, 0, 0, 0, 0],
+        [0, 0, 1, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+    ]
+
+    start_state = (0, 0)
+
+    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
+    return grid, mdp, discount, start_state
+
+
+def mediumGrid():
+    goalActionReward = 10000
+    noopReward = 0#-1
+    wallPenalty = -50000
+    movePenalty = -1
+
+    moveProb = 0.4
+    discount = 0.707106781#0.5
+
+    grid = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ]
+
+    start_state = (0, 0)
+
+    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
+    return grid, mdp, discount, start_state
+
+
+def largeGrid():
+    goalActionReward = 10000
+    noopReward = 0#-1
+    wallPenalty = -50000
+    movePenalty = -1
+
+    moveProb = 0.4
+    discount = 0.707106781#0.5
+
+    grid = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ]
+
+    start_state = (0, 0)
+
+    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
+    return grid, mdp, discount, start_state
+
+
+def paper2An(n):
+    goalActionReward = 10000
+    noopReward = 0#-1
+    wallPenalty = -300000
+    movePenalty = -1
+
+    moveProb = 0.9
+    discount = math.sqrt(0.9)
+
+    # grid = [
+    #     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #     [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0],
+    #     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+    #     [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0],
+    #     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    # ]
+    grid = [
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]
+    ]
+
+    for i in range(n):
+        grid[0] += [0, 0, 0]
+        grid[1] += [0, 0, 1]
+        grid[2] += [0, 0, 0]
+        grid[3] += [0, 0, 1]
+        grid[4] += [0, 0, 0]
+    
+    grid[0] += [0, 0, 0]
+    grid[1] += [0, 0, 0]
+    grid[2] += [0, 0, 2]
+    grid[3] += [0, 0, 0]
+    grid[4] += [0, 0, 0]
+
+    start_state = (1, 2)
+
+    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
+    return grid, mdp, discount, start_state
+
+
+def paper2A():
+    return paper2An(3)
+
+
+def splitterGrid():
+    goalActionReward = 10000
+    noopReward = 0#-1
+    wallPenalty = -50000
+    movePenalty = -1
+
+    moveProb = 0.9
+    discount = math.sqrt(0.9)
+
+    grid = []
+    
+    rows = 8
+    p1 = 2
+    p2 = 3
+
+    maxN = 3
+    nL = 0
+    nR = 0
+
+    for i in range(rows):
+        row = None
+        if nL < maxN and (rows-i) % p1 == 1:
+            nL += 1
+            row = [0, 1, 0, 1, 0, 1]
+        else:
+            row = [0, 0, 0, 0, 0, 0]
+
+        row.append(2 if i == 0 else 1)
+
+        if nR < maxN and (rows-i) % p2 == 1:
+            nR += 1
+            row += [1, 0, 1, 0, 1, 0]
+        else:
+            row += [0, 0, 0, 0, 0, 0]
+        grid.append(row)
+    
+    grid.append([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+    start_state = (6, rows+4-1)
+
+    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
+    return grid, mdp, discount, start_state
+
 
 start = time.time()
 
-mdp = createMDP(grid)
+grid, mdp, discount, start_state = splitterGrid()
 
 end = time.time()
 print("MDP creation time:", end - start)
 
-discount = 0.707106781#0.5
-checkin_period = 6
+#discount = 0.707106781#0.5
+checkin_period = 2
 
 policy = None
 values = None
@@ -908,6 +1048,8 @@ if not bnb:
     print("MDP value iteration time:", end3 - end2)
     print("MDP total time:", end3 - start)
 
+    print("Start state value:",values[start_state])
+
     draw(grid, compMDP, values, policy, True, False, "output/policy"+str(checkin_period)+"-vi")
 else:
     compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4))#1e-20, int(1e4))
@@ -916,6 +1058,8 @@ else:
     end2 = time.time()
     print("MDP branch and bound time:", end2 - end)
     print("MDP total time:", end2 - start)
+
+    print("Start state", start_state, "value:",values[start_state])
 
     for i in range(0, checkin_period-1):
         drawBNBIteration(grid, compMDPs[i], ratios, upperBounds, lowerBounds, pruned, i, "output/policy"+str(checkin_period)+"-bnb-"+str(i+1))
