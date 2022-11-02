@@ -16,6 +16,8 @@ import os
 import time
 import math
 
+from lp import linearProgrammingSolve
+
 class MDP:
     def __init__(self, states, actions, transitions, rewards, terminals):
         self.states = states
@@ -1022,7 +1024,7 @@ def splitterGrid():
     return grid, mdp, discount, start_state
 
 
-def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, drawPolicy=True, drawIterations=True, outputPrefix=""):
+def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False):
     policy = None
     values = None
     q_values = None
@@ -1039,17 +1041,24 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
         # policy, values = valueIteration(grid, compMDP, discount, 1e-20, int(1e4))#1e-20, int(1e4))
         discount_t = pow(discount, checkin_period)
         # print("final",checkin_period,len(compMDP.actions),discount_t,1e-20, int(1e4), (len(mdp.states) * len(compMDP.actions)))
-        policy, values, q_values = qValueIteration(grid, compMDP, discount_t, 1e-20, int(1e4))#1e-20, int(1e4))
-        print(policy)
 
-        end2 = time.time()
-        print("MDP value iteration time:", end2 - end1)
+        if doLinearProg:
+            policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
+            end2 = time.time()
+            print("MDP linear programming time:", end2 - end1)
+        else:
+            policy, values, q_values = qValueIteration(grid, compMDP, discount_t, 1e-20, int(1e4))#1e-20, int(1e4))
+            print(policy)
+
+            end2 = time.time()
+            print("MDP value iteration time:", end2 - end1)
+        
         print("MDP total time:", end2 - start)
 
         print("Start state value:",values[start_state])
 
         if drawPolicy:
-            draw(grid, compMDP, values, policy, True, False, "output/policy-"+outputPrefix+str(checkin_period)+"-vi")
+            draw(grid, compMDP, values, policy, True, False, "output/policy-"+outputPrefix+str(checkin_period)+("-vi" if not doLinearProg else "-lp"))
     else:
         compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4))#1e-20, int(1e4))
         print(policy)
@@ -1082,9 +1091,9 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
     return values[start_state]
 
 
-def runFig2Ratio(wallMin, wallMax):
+def runFig2Ratio(wallMin, wallMax, increment = 1):
     results = []
-    for numWalls in range(wallMin, wallMax+1):
+    for numWalls in range(wallMin, wallMax+increment, increment):
         grid, mdp, discount, start_state = paper2An(numWalls)
 
         pref = "paperFig2-" + str(numWalls) + "w-"
@@ -1103,15 +1112,17 @@ def runFig2Ratio(wallMin, wallMax):
 
 
 
-# start = time.time()
+start = time.time()
 
-# grid, mdp, discount, start_state = paper2An(6)
+grid, mdp, discount, start_state = paper2An(3)
 
-# end = time.time()
-# print("MDP creation time:", end - start)
+end = time.time()
+print("MDP creation time:", end - start)
 
-# checkin_period = 3
+checkin_period = 4
 
-#run(grid, mdp, discount, start_state, checkin_period, True)
+#run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
+#run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
+run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
 
-runFig2Ratio(1,10)
+#runFig2Ratio(30, 100, 10)
