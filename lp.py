@@ -19,11 +19,11 @@ def linearProgrammingSolve(grid, mdp, discount):
          
     print("time to create the model: "+str(time_elapsed))
         
-    print("ILP was made") 
+    # print("ILP was made") 
         
-    print("------Solve the model--------------")
+    # print("------Solve the model--------------")
         
-    print("Solve the ILP\n")
+    # print("Solve the ILP\n")
 
     time_start = time.time()
     lp.solve()
@@ -32,7 +32,7 @@ def linearProgrammingSolve(grid, mdp, discount):
          
     print("time to solve the model: "+str(time_elapsed))
 
-    print(lp.solution) 
+    # print(lp.solution) 
     # print(lp.solution.get_value_dict(v))
 
     values = lp.solution.get_value_dict(v)

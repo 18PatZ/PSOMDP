@@ -1030,6 +1030,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
     q_values = None
 
     start = time.time()
+    elapsed = None
 
     if not doBranchAndBound:
         compMDP = createCompositeMDP(mdp, discount, checkin_period)
@@ -1054,6 +1055,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
             print("MDP value iteration time:", end2 - end1)
         
         print("MDP total time:", end2 - start)
+        elapsed = end2 - start
 
         print("Start state value:",values[start_state])
 
@@ -1066,6 +1068,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
         end = time.time()
         print("MDP branch and bound time:", end - start)
         print("MDP total time:", end - start)
+        elapsed = end - start
 
         print("Start state", start_state, "value:",values[start_state])
 
@@ -1088,7 +1091,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
     #     for end_state in compMDP.transitions[s][action].keys():
     #         print(s,action,"->",end_state,"is",compMDP.transitions[s][action][end_state])
 
-    return values[start_state]
+    return values[start_state], elapsed
 
 
 def runFig2Ratio(wallMin, wallMax, increment = 1):
@@ -1097,8 +1100,8 @@ def runFig2Ratio(wallMin, wallMax, increment = 1):
         grid, mdp, discount, start_state = paper2An(numWalls)
 
         pref = "paperFig2-" + str(numWalls) + "w-"
-        value2 = run(grid, mdp, discount, start_state, checkin_period=2, doBranchAndBound=True, drawPolicy=True, drawIterations=False, outputPrefix=pref)
-        value3 = run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=True, drawPolicy=True, drawIterations=False, outputPrefix=pref)
+        value2, elapsed2 = run(grid, mdp, discount, start_state, checkin_period=2, doBranchAndBound=True, drawPolicy=True, drawIterations=False, outputPrefix=pref)
+        value3, elapsed3 = run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=True, drawPolicy=True, drawIterations=False, outputPrefix=pref)
 
         results.append((numWalls, value2, value3))
 
@@ -1111,18 +1114,38 @@ def runFig2Ratio(wallMin, wallMax, increment = 1):
         print("")
 
 
+def runCheckinSteps(checkinMin, checkinMax, increment = 1):
+    grid, mdp, discount, start_state = paper2An(3)
+    times = []
 
-start = time.time()
+    for checkin_period in range(checkinMin, checkinMax+increment, increment):
+        print("\n\n ==== CHECKIN PERIOD " + str(checkin_period)  + " ==== \n\n")
+        time = 0
+        for i in range(0, 1):
+            value, elapsed = run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+            time += elapsed
+        time /= 3
 
-grid, mdp, discount, start_state = paper2An(3)
+        times.append(time)
+        print("")
+        print("Average",time)
+        print(times)
 
-end = time.time()
-print("MDP creation time:", end - start)
 
-checkin_period = 4
 
-#run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
-#run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
-run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+# start = time.time()
+
+# grid, mdp, discount, start_state = paper2An(3)
+
+# end = time.time()
+# print("MDP creation time:", end - start)
+
+# checkin_period = 4
+
+# #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
+# #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
+# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+
+runCheckinSteps(1, 20)
 
 #runFig2Ratio(30, 100, 10)
