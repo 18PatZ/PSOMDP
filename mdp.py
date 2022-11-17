@@ -722,9 +722,32 @@ def qValueIteration(grid, mdp, discount, threshold, max_iterations, restricted_a
     policy, state_values = extractPolicyFromQ(mdp, values, statesToIterate, restricted_action_set)
     return policy, state_values, values
 
+def qValuesFromR(mdp, discount, state_values, restricted_action_set = None):
+    q_values = {state: {action: 0 for action in mdp.transitions[state].keys()} for state in mdp.states}
+
+    for state in mdp.states:
+        action_set = mdp.actions if restricted_action_set is None else restricted_action_set[state]
+        for action in action_set:
+            expected_value = mdp.rewards[state][action]
+            future_value = 0
+
+            for end_state in mdp.transitions[state][action].keys():
+                prob = mdp.transitions[state][action][end_state]
+
+                maxQ = state_values[end_state]
+                if maxQ is None:
+                    maxQ = 0
+
+                future_value += discount * prob * maxQ
+
+            expected_value += future_value
+
+            q_values[state][action] = expected_value
+
+    return q_values
 
 
-def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iterations):
+def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iterations, doLinearProg=False):
 
     compMDP = convertSingleStepMDP(base_mdp)
     pruned_action_set = {state: [action for action in compMDP.actions] for state in base_mdp.states}
@@ -771,7 +794,11 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
             #             upperBound[state][prefix] = q_value
 
             discount_input = pow(discount, t)
-            policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
+            if doLinearProg:
+                policy, values = linearProgrammingSolve(grid, compMDP, discount_input, pruned_action_set)
+                q_values = qValuesFromR(compMDP, discount_input, values, pruned_action_set)
+            else:
+                policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
             upperBound = q_values
 
         else: # extend q-values?
@@ -788,7 +815,11 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
             upperBound = newUpper
 
         discount_input = pow(discount, checkin_period)
-        policy, state_values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
+        if doLinearProg:
+            policy, state_values = linearProgrammingSolve(grid, compMDP, discount_input, pruned_action_set)
+            q_values = qValuesFromR(compMDP, discount_input, state_values, pruned_action_set)
+        else:
+            policy, state_values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
         lowerBound = state_values
 
         upperBounds.append(upperBound)
@@ -832,7 +863,11 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
     # print("final",checkin_period,len(compMDP.actions),discount_input,threshold,max_iterations, tot,"/",(len(base_mdp.states) * len(compMDP.actions)))
 
     start = time.time()
-    policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
+    if doLinearProg:
+        policy, values = linearProgrammingSolve(grid, compMDP, discount_input, pruned_action_set)
+        q_values = qValuesFromR(compMDP, discount_input, values, pruned_action_set)
+    else:
+        policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
     end = time.time()
 
     # print(len(compMDP.actions),"actions vs",pow(len(base_mdp.actions), checkin_period))
@@ -1062,22 +1097,24 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
         if drawPolicy:
             draw(grid, compMDP, values, policy, True, False, "output/policy-"+outputPrefix+str(checkin_period)+("-vi" if not doLinearProg else "-lp"))
     else:
-        compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4))#1e-20, int(1e4))
+        compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4), doLinearProg=doLinearProg)
         print(policy)
         
         end = time.time()
-        print("MDP branch and bound time:", end - start)
+        print("MDP branch and bound with " + ("linear programming" if doLinearProg else "q value iteration") + " time:", end - start)
         print("MDP total time:", end - start)
         elapsed = end - start
 
         print("Start state", start_state, "value:",values[start_state])
 
+        suffix = "bnb-lp" if doLinearProg else "bnb-q"
+
         if drawIterations:
             for i in range(0, checkin_period-1):
-                drawBNBIteration(grid, compMDPs[i], ratios, upperBounds, lowerBounds, pruned, i, "output/policy-"+outputPrefix+str(checkin_period)+"-bnb-"+str(i+1))
+                drawBNBIteration(grid, compMDPs[i], ratios, upperBounds, lowerBounds, pruned, i, "output/policy-"+outputPrefix+str(checkin_period)+"-"+suffix+"-"+str(i+1))
 
         if drawPolicy:
-            draw(grid, compMDP, values, policy, True, False, "output/policy-"+outputPrefix+str(checkin_period)+"-bnb-f")
+            draw(grid, compMDP, values, policy, True, False, "output/policy-"+outputPrefix+str(checkin_period)+"-"+suffix+"-f")
 
     # if not os.path.exists("output/"):
     #     os.makedirs("output/")
@@ -1124,7 +1161,7 @@ def runCheckinSteps(checkinMin, checkinMax, increment = 1):
         for i in range(0, 1):
             value, elapsed = run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
             time += elapsed
-        time /= 3
+        time /= 1
 
         times.append(time)
         print("")
@@ -1133,19 +1170,20 @@ def runCheckinSteps(checkinMin, checkinMax, increment = 1):
 
 
 
-# start = time.time()
+start = time.time()
 
-# grid, mdp, discount, start_state = paper2An(3)
+grid, mdp, discount, start_state = paper2An(3)
 
-# end = time.time()
-# print("MDP creation time:", end - start)
+end = time.time()
+print("MDP creation time:", end - start)
 
-# checkin_period = 4
+checkin_period = 5
 
-# #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
-# #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
-# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+#run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
+# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
+run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True) # BNB w/ LP
 
-runCheckinSteps(1, 20)
+# runCheckinSteps(1, 20)
 
 #runFig2Ratio(30, 100, 10)
