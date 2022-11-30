@@ -747,7 +747,7 @@ def qValuesFromR(mdp, discount, state_values, restricted_action_set = None):
     return q_values
 
 
-def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iterations, doLinearProg=False):
+def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iterations, doLinearProg=False, greedy=-1):
 
     compMDP = convertSingleStepMDP(base_mdp)
     pruned_action_set = {state: [action for action in compMDP.actions] for state in base_mdp.states}
@@ -830,11 +830,21 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
         tot = 0
         for state in base_mdp.states:
             toPrune = []
+            action_vals = {}
+            
             for action in pruned_action_set[state]:
                 prefix = action[:t]
                 # print(prefix, upperBound[state][prefix], lowerBound[state])
                 if upperBound[state][prefix] < lowerBound[state]:
                     toPrune.append(prefix)
+                else:
+                    action_vals[action] = upperBound[state][prefix]
+
+            if greedy > -1 and len(action_vals) > greedy:
+                sorted_vals = sorted(action_vals.items(), key=lambda item: item[1], reverse=True)
+                for i in range(greedy, len(sorted_vals)):
+                    action = sorted_vals[i][0]
+                    toPrune.append(action[:t])
 
             # print("BnB pruning",len(toPrune),"/",len(pruned_action_set[state]),"actions")
             pruned_action_set[state] = [action for action in pruned_action_set[state] if action[:t] not in toPrune] # remove all actions with prefix
@@ -965,14 +975,14 @@ def largeGrid():
     return grid, mdp, discount, start_state
 
 
-def paper2An(n):
+def paper2An(n, discount = math.sqrt(0.99)):
     goalActionReward = 10000
     noopReward = 0#-1
     wallPenalty = -300000
     movePenalty = -1
 
     moveProb = 0.9
-    discount = math.sqrt(0.99)
+    # discount = math.sqrt(0.99)
 
     # grid = [
     #     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -1059,7 +1069,7 @@ def splitterGrid():
     return grid, mdp, discount, start_state
 
 
-def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False):
+def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False, bnbGreedy=-1):
     policy = None
     values = None
     q_values = None
@@ -1097,7 +1107,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
         if drawPolicy:
             draw(grid, compMDP, values, policy, True, False, "output/policy-"+outputPrefix+str(checkin_period)+("-vi" if not doLinearProg else "-lp"))
     else:
-        compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4), doLinearProg=doLinearProg)
+        compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4), doLinearProg=doLinearProg, greedy=bnbGreedy)
         print(policy)
         
         end = time.time()
@@ -1108,6 +1118,11 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
         print("Start state", start_state, "value:",values[start_state])
 
         suffix = "bnb-lp" if doLinearProg else "bnb-q"
+
+        if bnbGreedy <= 0:
+            suffix += "-nG"
+        else:
+            suffix += "-G" + str(bnbGreedy)
 
         if drawIterations:
             for i in range(0, checkin_period-1):
@@ -1131,24 +1146,28 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
     return values[start_state], elapsed
 
 
-def runFig2Ratio(wallMin, wallMax, increment = 1):
+def runFig2Ratio(wallMin, wallMax, increment = 1, _discount = math.sqrt(0.99)):
     results = []
     for numWalls in range(wallMin, wallMax+increment, increment):
-        grid, mdp, discount, start_state = paper2An(numWalls)
+        grid, mdp, discount, start_state = paper2An(numWalls, _discount)
 
         pref = "paperFig2-" + str(numWalls) + "w-"
-        value2, elapsed2 = run(grid, mdp, discount, start_state, checkin_period=2, doBranchAndBound=True, drawPolicy=True, drawIterations=False, outputPrefix=pref)
-        value3, elapsed3 = run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=True, drawPolicy=True, drawIterations=False, outputPrefix=pref)
+        value2, elapsed2 = run(grid, mdp, discount, start_state, checkin_period=2, doBranchAndBound=False, doLinearProg=True, drawPolicy=False, drawIterations=False, outputPrefix=pref)
+        value3, elapsed3 = run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=False, doLinearProg=True, drawPolicy=False, drawIterations=False, outputPrefix=pref)
 
-        results.append((numWalls, value2, value3))
+        r = (numWalls, value2, value3)
+        results.append(r)
 
-    print("\n\n ===== RESULTS ===== \n\n")
-    for r in results:
-        print("Length " + str(3 + r[0] * 3 + 1) + " (" + str(r[0]) + " walls):")
+        print("\nLength " + str(3 + r[0] * 3 + 1) + " (" + str(r[0]) + " walls):")
         print("\tValue k=2:", r[1])
         print("\tValue k=3:", r[2])
         print("\tRatio k3/k2:", r[2]/r[1])
         print("")
+
+    print("\n\n ===== RESULTS ===== \n\n")
+    for r in results:
+        print("Length " + str(3 + r[0] * 3 + 1) + " (" + str(r[0]) + " walls) k3/k2:", r[2]/r[1])
+        # print("")
 
 
 def runCheckinSteps(checkinMin, checkinMax, increment = 1):
@@ -1172,7 +1191,7 @@ def runCheckinSteps(checkinMin, checkinMax, increment = 1):
 
 start = time.time()
 
-grid, mdp, discount, start_state = paper2An(3)
+grid, mdp, discount, start_state = paper2An(3)#, 0.9999)
 
 end = time.time()
 print("MDP creation time:", end - start)
@@ -1181,9 +1200,9 @@ checkin_period = 5
 
 #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
-run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
-# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True) # BNB w/ LP
+# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP
 
 # runCheckinSteps(1, 20)
 
-#runFig2Ratio(30, 100, 10)
+# runFig2Ratio(210, 300, 10, _discount=0.9999)
