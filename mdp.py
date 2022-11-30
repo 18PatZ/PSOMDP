@@ -6,6 +6,11 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from matplotlib import animation
 
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy import sparse
+
+import pandas as pd
+
 from networkx.drawing.nx_agraph import graphviz_layout, to_agraph
 
 import colorsys
@@ -1189,6 +1194,233 @@ def runCheckinSteps(checkinMin, checkinMax, increment = 1):
 
 
 
+def countActionSimilarity(mdp, thresh):
+
+    count = 0
+    counts = {}
+
+    tA = 0
+    tB = 0
+    tC = 0
+    tD = 0
+    tE = 0
+
+    for state in mdp.states:
+        # s1 = time.time()
+        # actions = [np.array([(mdp.transitions[state][action][end_state] if end_state in mdp.transitions[state][action] else 0) for end_state in mdp.states]) for action in mdp.actions]
+        # s2 = time.time()
+        # tA += s2 - s1
+        
+        # vals = [(abs(mdp.rewards[state][mdp.actions[i]] - mdp.rewards[state][mdp.actions[j]]) + (1 - np.dot(actions[i], actions[j]) / np.linalg.norm(actions[i]) / np.linalg.norm(actions[j]))) for i in range(len(mdp.actions) - 1) for j in range(i+1, len(mdp.actions))]
+
+        # s3 = time.time()
+        # tC += s3 - s2
+
+        # vals_n = np.array(vals)
+
+        # s4 = time.time()
+        # tD += s4 - s3
+
+        # count += len(np.where(vals_n <= thresh)[0])
+
+        # s5 = time.time()
+        # tE += s5 - s4
+
+        actions = np.array([([(mdp.transitions[state][action][end_state] if end_state in mdp.transitions[state][action] else 0) for end_state in mdp.states]) for action in mdp.actions])
+
+        # s2 = time.time()
+        # tA += s2 - s1
+
+        reward_diffs = np.array([([abs(mdp.rewards[state][mdp.actions[i]] - mdp.rewards[state][mdp.actions[j]]) for j in range(len(mdp.actions))]) for i in range(len(mdp.actions))])
+
+        # s2b = time.time()
+        # tB += s2b - s2
+
+        A_sparse = sparse.csr_matrix(actions)
+
+        # s3 = time.time()
+        # tC += s3 - s2b
+
+        differences = 1 - cosine_similarity(A_sparse)
+
+        total_diffs = reward_diffs + differences
+
+        
+        # s4 = time.time()
+        # tD += s4 - s3
+
+        indices = np.where(total_diffs <= thresh) # 1st array in tuple is row indices, 2nd is column
+        filtered = np.where(indices[0] > indices[1])[0] # ignore diagonal, ignore duplicate
+
+        indices_filtered = [(indices[0][i], indices[1][i]) for i in filtered] # array of pairs of indices
+
+        G = nx.Graph()
+        G.add_edges_from(indices_filtered)
+        connected_components = list(nx.connected_components(G))
+        
+        num_removed = len(G.nodes) - len(connected_components)
+
+        # if state == (1,2):
+        #     print("shape",total_diffs.shape)
+        #     print(indices_filtered)
+        #     print("indices",len(indices[0]))
+        #     print("filtered",len(filtered))
+        #     print("present",len(G.nodes))
+        #     print("clusters",connected_components)
+        #     print("removed",num_removed)
+
+        count += num_removed
+
+        # s5 = time.time()
+        # tE += s5 - s4
+
+        counts[state] = num_removed
+
+
+
+
+        # for i in range(len(mdp.actions) - 1):
+        #     actionA = mdp.actions[i]
+        #     rewardA = mdp.rewards[state][actionA]
+        #     transitionsA = actions[i]
+
+        #     for j in range(i+1, len(mdp.actions)):
+        #         actionB = mdp.actions[j]
+        #         rewardB = mdp.rewards[state][actionB]
+        #         transitionsB = actions[j]
+
+        #         cost_difference = abs(rewardA - rewardB)
+
+        #         # cosine similarity, 1 is same, 0 is orthogonal, and -1 is opposite
+        #         transition_similarity = np.dot(transitionsA, transitionsB) / np.linalg.norm(transitionsA) / np.linalg.norm(transitionsB)
+        #         # difference, 0 is same, 1 is orthogonal, 2 is opposite
+        #         transition_difference = 1 - transition_similarity
+
+        #         total_difference = 1 * cost_difference + 1 * transition_difference
+
+        #         if total_difference <= thresh:
+        #             count += 1
+
+        # s3 = time.time()
+        # tB += s3 - s2
+
+    # print(tA)
+    # print(tB)
+    # print(tC)
+    # print(tD)
+    # print(tE)
+
+    return count, counts
+
+
+
+def checkActionSimilarity(mdp):
+
+    nA = len(mdp.actions)
+    diffs = {}
+
+    for state in mdp.states:
+        actions = {}
+  
+        cost_diffs = np.zeros((nA, nA))
+        transition_diffs = np.zeros((nA, nA))
+        total_diffs = np.zeros((nA, nA))
+
+        for action in mdp.actions:
+            reward = mdp.rewards[state][action]
+            transitions = mdp.transitions[state][action]
+            probability_dist = np.array([(transitions[end_state] if end_state in transitions else 0) for end_state in mdp.states])
+
+            actions[action] = (reward, probability_dist)
+
+        for i in range(len(mdp.actions) - 1):
+            actionA = mdp.actions[i]
+            transitionsA = actions[actionA][1]
+
+            for j in range(i+1, len(mdp.actions)):
+                actionB = mdp.actions[j]
+                transitionsB = actions[actionB][1]
+
+                cost_difference = abs(actions[actionA][0] - actions[actionB][0])
+
+                # cosine similarity, 1 is same, 0 is orthogonal, and -1 is opposite
+                transition_similarity = np.dot(transitionsA, transitionsB) / np.linalg.norm(transitionsA) / np.linalg.norm(transitionsB)
+                # difference, 0 is same, 1 is orthogonal, 2 is opposite
+                transition_difference = 1 - transition_similarity
+
+                total_difference = 1 * cost_difference + 1 * transition_difference
+
+                cost_diffs[i][j] = cost_difference
+                cost_diffs[j][i] = cost_difference
+
+                transition_diffs[i][j] = transition_difference
+                transition_diffs[j][i] = transition_difference
+
+                total_diffs[i][j] = total_difference
+                total_diffs[j][i] = total_difference
+
+        diffs[state] = (cost_diffs, transition_diffs, total_diffs)
+
+    return diffs
+
+def makeTable(short_names, diffs):
+    idx = pd.Index(short_names)
+    df = pd.DataFrame(diffs, index=idx, columns=short_names)
+
+    vals = np.around(df.values, 3) # round to 2 digits
+    # norm = plt.Normalize(vals.min()-1, vals.max()+1)
+    norm = plt.Normalize(vals.min(), vals.max()+0.2)
+    colours = plt.cm.plasma_r(norm(vals))
+
+    colours[np.where(diffs < 1e-5)] = [1, 1, 1, 1]
+
+    fig = plt.figure(figsize=(15,8), dpi=300)
+    ax = fig.add_subplot(111, frameon=True, xticks=[], yticks=[])
+
+    the_table=plt.table(cellText=vals, rowLabels=df.index, colLabels=df.columns, 
+                        loc='center', 
+                        cellColours=colours)
+
+def visualizeActionSimilarity(mdp, diffs, state, midfix=""):
+    print("State:", state)
+    cost_diffs, transition_diffs, total_diffs = diffs[state]
+
+    short_names = []
+    for action in mdp.actions:
+        short_name = ""
+        for a in action:
+            short_name += ("0" if a == "NO-OP" else a[0])
+        short_names.append(short_name)
+
+    makeTable(short_names, cost_diffs)
+    plt.savefig(f'output/diff{midfix}-cost.png', bbox_inches='tight')
+
+    makeTable(short_names, transition_diffs)
+    plt.savefig(f'output/diff{midfix}-transition.png', bbox_inches='tight')
+
+    makeTable(short_names, total_diffs)
+    plt.savefig(f'output/diff{midfix}-total.png', bbox_inches='tight')
+
+    # plt.show()
+
+def countSimilarity(mdp, diffs, diffType, thresh):
+    count = 0
+    counts = {}
+    
+    for state in mdp.states:
+        d = diffs[state][diffType]
+        indices = np.where(d <= thresh) # 1st array in tuple is row indices, 2nd is column
+        filter = np.where(indices[0] > indices[1])[0] # ignore diagonal, ignore duplicate
+        indices_filtered = [(indices[0][i], indices[1][i]) for i in filter] # array of pairs of indices
+
+        c = len(indices_filtered)
+        
+        count += c
+        counts[state] = c
+
+    return count, counts
+
+
 start = time.time()
 
 grid, mdp, discount, start_state = paper2An(3)#, 0.9999)
@@ -1201,8 +1433,33 @@ checkin_period = 5
 #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
-run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP
+# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP
 
 # runCheckinSteps(1, 20)
 
 # runFig2Ratio(210, 300, 10, _discount=0.9999)
+
+
+
+compMDP = createCompositeMDP(mdp, discount, checkin_period)
+print("Actions:",len(mdp.actions),"->",len(compMDP.actions))
+
+end1 = time.time()
+print("MDP composite time:", end1 - end)
+
+thresh = 1e-5
+# diffs = checkActionSimilarity(compMDP)
+count, counts = countActionSimilarity(compMDP, thresh)
+
+end2 = time.time()
+print("Similarity time:", end2 - end1)
+
+# count, counts = countSimilarity(compMDP, diffs, 2, thresh)
+percTotal = "{:.2f}".format(count / (len(compMDP.states) * len(compMDP.actions)) * 100)
+percStart = "{:.2f}".format(counts[start_state] / (len(compMDP.actions)) * 100)
+print(start_state)
+print(f"{len(compMDP.states)} states {len(compMDP.actions)} actions per state")
+print(f"Pairs under {thresh} total: {count} / {len(compMDP.states) * len(compMDP.actions)} ({percTotal}%)")
+print(f"Pairs under {thresh} in start state: {counts[start_state]} / {len(compMDP.actions)} ({percStart}%)")
+
+# visualizeActionSimilarity(compMDP, diffs, start_state, f"-{checkin_period}")
