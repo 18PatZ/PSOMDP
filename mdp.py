@@ -208,6 +208,17 @@ def createCompositeMDP(mdp, discount, checkin_period):
     prevPeriodMDP = createCompositeMDP(mdp, discount, checkin_period-1)
     return extendCompositeMDP(mdp, discount, prevPeriodMDP)
 
+def createCompositeMDPs(mdp, discount, checkin_period):
+    mdps = []
+    prevPeriodMDP = None
+    for c in range(1, checkin_period + 1):
+        if c == 1:
+            prevPeriodMDP = convertSingleStepMDP(mdp)
+        else:
+            prevPeriodMDP = extendCompositeMDP(mdp, discount, prevPeriodMDP)
+        mdps.append(prevPeriodMDP)
+    return mdps
+
 def extendCompositeMDP(mdp, discount, prevPeriodMDP, restricted_action_set = None):
     compMDP = MDP([], [], {}, {}, [])
 
@@ -1083,7 +1094,7 @@ def splitterGrid():
     return grid, mdp, discount, start_state
 
 
-def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False, bnbGreedy=-1):
+def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False, bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None):
     policy = None
     values = None
     q_values = None
@@ -1092,7 +1103,8 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
     elapsed = None
 
     if not doBranchAndBound:
-        compMDP = createCompositeMDP(mdp, discount, checkin_period)
+        compMDPs = createCompositeMDPs(mdp, discount, checkin_period)
+        compMDP = compMDPs[-1]
         print("Actions:",len(mdp.actions),"->",len(compMDP.actions))
 
         end1 = time.time()
@@ -1102,16 +1114,56 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
         discount_t = pow(discount, checkin_period)
         # print("final",checkin_period,len(compMDP.actions),discount_t,1e-20, int(1e4), (len(mdp.states) * len(compMDP.actions)))
 
+        restricted_action_set = None
+
+        if doSimilarityCluster:
+            sc1 = time.time()
+            
+            checkinPeriodLimit = simClusterParams[0]
+            thresh = simClusterParams[1]
+
+            if checkinPeriodLimit < 0:
+                checkinPeriodLimit = checkin_period
+
+            mdpToCluster = compMDPs[checkinPeriodLimit-1]
+
+            clusters = getActionClusters(mdpToCluster, thresh)
+
+            count = 0
+            count_s = 0
+
+            restricted_action_set = {}
+
+            for state in compMDP.states:
+                restricted_action_set[state] = [action for action in compMDP.actions if action[:checkinPeriodLimit] not in clusters[state]]
+
+                num_removed = len(compMDP.actions) - len(restricted_action_set[state])
+                count += num_removed
+
+                if state == start_state:
+                    count_s = num_removed
+
+            sc2 = time.time()
+            print("Similarity time:", sc2 - sc1)
+
+            percTotal = "{:.2f}".format(count / (len(compMDP.states) * len(compMDP.actions)) * 100)
+            percStart = "{:.2f}".format(count_s / (len(compMDP.actions)) * 100)
+            print(f"Actions under {thresh} total: {count} / {len(compMDP.states) * len(compMDP.actions)} ({percTotal}%)")
+            print(f"Actions under {thresh} in start state: {count_s} / {len(compMDP.actions)} ({percStart}%)")
+
         if doLinearProg:
-            policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
+            l1 = time.time()
+            policy, values = linearProgrammingSolve(grid, compMDP, discount_t, restricted_action_set = restricted_action_set)
+            
             end2 = time.time()
-            print("MDP linear programming time:", end2 - end1)
+            print("MDP linear programming time:", end2 - l1)
         else:
-            policy, values, q_values = qValueIteration(grid, compMDP, discount_t, 1e-20, int(1e4))#1e-20, int(1e4))
+            q1 = time.time()
+            policy, values, q_values = qValueIteration(grid, compMDP, discount_t, 1e-20, int(1e4), restricted_action_set=restricted_action_set)#1e-20, int(1e4))
             print(policy)
 
             end2 = time.time()
-            print("MDP value iteration time:", end2 - end1)
+            print("MDP value iteration time:", end2 - q1)
         
         print("MDP total time:", end2 - start)
         elapsed = end2 - start
@@ -1202,17 +1254,29 @@ def runCheckinSteps(checkinMin, checkinMax, increment = 1):
         print(times)
 
 
-
 def countActionSimilarity(mdp, thresh):
 
     count = 0
     counts = {}
+    
+    clusters = getActionClusters(mdp, thresh)
+
+    for state in mdp.states:
+        num_removed = len(clusters[state])
+        count += num_removed
+        counts[state] = num_removed 
+
+    return count, counts
+
+def getActionClusters(mdp, thresh):
 
     tA = 0
     tB = 0
     tC = 0
     tD = 0
     tE = 0
+
+    clusters = {state: {} for state in mdp.states}
 
     ati = {}
     for i in range(len(mdp.actions)):
@@ -1222,7 +1286,7 @@ def countActionSimilarity(mdp, thresh):
         sti[mdp.states[i]] = i
 
     for state in mdp.states:
-        s1 = time.time()
+        # s1 = time.time()
 
         actions = np.zeros((len(mdp.actions), len(mdp.states)))
         for action in mdp.transitions[state]:
@@ -1231,28 +1295,28 @@ def countActionSimilarity(mdp, thresh):
 
         # actions = np.array([([(mdp.transitions[state][action][end_state] if end_state in mdp.transitions[state][action] else 0) for end_state in mdp.states]) for action in mdp.actions])
 
-        s2 = time.time()
-        tA += s2 - s1
+        # s2 = time.time()
+        # tA += s2 - s1
 
         rewards = np.array([mdp.rewards[state][mdp.actions[i]] for i in range(len(mdp.actions))])
         rewards_transpose = rewards[:,np.newaxis]
         reward_diffs = np.abs(rewards_transpose - rewards)
         # reward_diffs = np.array([([abs(mdp.rewards[state][mdp.actions[i]] - mdp.rewards[state][mdp.actions[j]]) for j in range(len(mdp.actions))]) for i in range(len(mdp.actions))])
 
-        s2b = time.time()
-        tB += s2b - s2
+        # s2b = time.time()
+        # tB += s2b - s2
 
         A_sparse = sparse.csr_matrix(actions)
 
-        s3 = time.time()
-        tC += s3 - s2b
+        # s3 = time.time()
+        # tC += s3 - s2b
 
         differences = 1 - cosine_similarity(A_sparse)
 
         total_diffs = reward_diffs + differences
 
-        s4 = time.time()
-        tD += s4 - s3
+        # s4 = time.time()
+        # tD += s4 - s3
 
         indices = np.where(total_diffs <= thresh) # 1st array in tuple is row indices, 2nd is column
         filtered = np.where(indices[0] > indices[1])[0] # ignore diagonal, ignore duplicate
@@ -1261,24 +1325,24 @@ def countActionSimilarity(mdp, thresh):
 
         G = nx.Graph()
         G.add_edges_from(indices_filtered)
-        connected_components = list(nx.connected_components(G))
-        
-        num_removed = len(G.nodes) - len(connected_components)
 
-        count += num_removed
+        for connected_comp in nx.connected_components(G):
+            cluster = [mdp.actions[ind] for ind in connected_comp]
+            
+            for i in range(1, len(cluster)): # skip first one in cluster (leader)
+                action = cluster[i]
+                clusters[state][action] = cluster
+                
+        # s5 = time.time()
+        # tE += s5 - s4
 
-        s5 = time.time()
-        tE += s5 - s4
+    # print(tA)
+    # print(tB)
+    # print(tC)
+    # print(tD)
+    # print(tE)
 
-        counts[state] = num_removed
-
-    print(tA)
-    print(tB)
-    print(tC)
-    print(tD)
-    print(tE)
-
-    return count, counts
+    return clusters
 
 
 
@@ -1396,12 +1460,16 @@ grid, mdp, discount, start_state = splitterGrid()#paper2An(3)#, 0.9999)
 end = time.time()
 print("MDP creation time:", end - start)
 
-checkin_period = 4
+checkin_period = 5
 
 #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
-run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True) # BNB w/ LP w/ greedy
+
+run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True, 
+    doSimilarityCluster=True, simClusterParams=(4, 1e-5)) # LP w/ similarity clustering
+
+# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True) # BNB w/ LP w/ greedy
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP w/ greedy
 
 # runCheckinSteps(1, 20)
