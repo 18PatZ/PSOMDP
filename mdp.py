@@ -1205,8 +1205,15 @@ def countActionSimilarity(mdp, thresh):
     tD = 0
     tE = 0
 
+    ati = {}
+    for i in range(len(mdp.actions)):
+        ati[mdp.actions[i]] = i
+    sti = {}
+    for i in range(len(mdp.states)):
+        sti[mdp.states[i]] = i
+
     for state in mdp.states:
-        # s1 = time.time()
+        s1 = time.time()
         # actions = [np.array([(mdp.transitions[state][action][end_state] if end_state in mdp.transitions[state][action] else 0) for end_state in mdp.states]) for action in mdp.actions]
         # s2 = time.time()
         # tA += s2 - s1
@@ -1226,28 +1233,36 @@ def countActionSimilarity(mdp, thresh):
         # s5 = time.time()
         # tE += s5 - s4
 
-        actions = np.array([([(mdp.transitions[state][action][end_state] if end_state in mdp.transitions[state][action] else 0) for end_state in mdp.states]) for action in mdp.actions])
+        actions = np.zeros((len(mdp.actions), len(mdp.states)))
+        for action in mdp.transitions[state]:
+            for end_state in mdp.transitions[state][action]:
+                actions[ati[action]][sti[end_state]] = mdp.transitions[state][action][end_state]
 
-        # s2 = time.time()
-        # tA += s2 - s1
+        # actions = np.array([([(mdp.transitions[state][action][end_state] if end_state in mdp.transitions[state][action] else 0) for end_state in mdp.states]) for action in mdp.actions])
 
-        reward_diffs = np.array([([abs(mdp.rewards[state][mdp.actions[i]] - mdp.rewards[state][mdp.actions[j]]) for j in range(len(mdp.actions))]) for i in range(len(mdp.actions))])
+        s2 = time.time()
+        tA += s2 - s1
 
-        # s2b = time.time()
-        # tB += s2b - s2
+        rewards = np.array([mdp.rewards[state][mdp.actions[i]] for i in range(len(mdp.actions))])
+        rewards_transpose = rewards[:,np.newaxis]
+        reward_diffs = np.abs(rewards_transpose - rewards)
+        # reward_diffs = np.array([([abs(mdp.rewards[state][mdp.actions[i]] - mdp.rewards[state][mdp.actions[j]]) for j in range(len(mdp.actions))]) for i in range(len(mdp.actions))])
+
+        s2b = time.time()
+        tB += s2b - s2
 
         A_sparse = sparse.csr_matrix(actions)
 
-        # s3 = time.time()
-        # tC += s3 - s2b
+        s3 = time.time()
+        tC += s3 - s2b
 
         differences = 1 - cosine_similarity(A_sparse)
 
         total_diffs = reward_diffs + differences
 
         
-        # s4 = time.time()
-        # tD += s4 - s3
+        s4 = time.time()
+        tD += s4 - s3
 
         indices = np.where(total_diffs <= thresh) # 1st array in tuple is row indices, 2nd is column
         filtered = np.where(indices[0] > indices[1])[0] # ignore diagonal, ignore duplicate
@@ -1271,8 +1286,8 @@ def countActionSimilarity(mdp, thresh):
 
         count += num_removed
 
-        # s5 = time.time()
-        # tE += s5 - s4
+        s5 = time.time()
+        tE += s5 - s4
 
         counts[state] = num_removed
 
@@ -1304,11 +1319,11 @@ def countActionSimilarity(mdp, thresh):
         # s3 = time.time()
         # tB += s3 - s2
 
-    # print(tA)
-    # print(tB)
-    # print(tC)
-    # print(tD)
-    # print(tE)
+    print(tA)
+    print(tB)
+    print(tC)
+    print(tD)
+    print(tE)
 
     return count, counts
 
@@ -1423,7 +1438,7 @@ def countSimilarity(mdp, diffs, diffType, thresh):
 
 start = time.time()
 
-grid, mdp, discount, start_state = paper2An(3)#, 0.9999)
+grid, mdp, discount, start_state = splitterGrid()#paper2An(3)#, 0.9999)
 
 end = time.time()
 print("MDP creation time:", end - start)
