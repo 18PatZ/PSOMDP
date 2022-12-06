@@ -208,7 +208,7 @@ def createCompositeMDP(mdp, discount, checkin_period):
     prevPeriodMDP = createCompositeMDP(mdp, discount, checkin_period-1)
     return extendCompositeMDP(mdp, discount, prevPeriodMDP)
 
-def extendCompositeMDP(mdp, discount, prevPeriodMDP):
+def extendCompositeMDP(mdp, discount, prevPeriodMDP, restricted_action_set = None):
     compMDP = MDP([], [], {}, {}, [])
 
     compMDP.states = mdp.states.copy()
@@ -216,24 +216,29 @@ def extendCompositeMDP(mdp, discount, prevPeriodMDP):
 
     for action_sequence in prevPeriodMDP.actions:
         for action in mdp.actions:
-            extended_action_sequence = action_sequence + (action,) # extend tuple
+            action_tuple = action if type(action) is tuple else (action,)
+            extended_action_sequence = action_sequence + action_tuple # extend tuple
             compMDP.actions.append(extended_action_sequence)
 
     for state in prevPeriodMDP.transitions.keys():
         compMDP.transitions[state] = {}
         for prev_action_sequence in prevPeriodMDP.transitions[state].keys():
+            if restricted_action_set is not None and prev_action_sequence not in restricted_action_set[state]:
+                continue
+            
             for end_state in prevPeriodMDP.transitions[state][prev_action_sequence].keys():
                 # looping through every state-actionsequence-state chain in the previous step MDP
                 # now extend chain by one action by multiplying transition probability of previous chain end state to new end state through action
 
                 for action in mdp.actions:
+                    action_tuple = action if type(action) is tuple else (action,)
                     prob_chain = prevPeriodMDP.transitions[state][prev_action_sequence][end_state]
 
                     if end_state in mdp.transitions and action in mdp.transitions[end_state]:
                         for new_end_state in mdp.transitions[end_state][action].keys():
                             prob_additional = mdp.transitions[end_state][action][new_end_state]
 
-                            extended_action_sequence = prev_action_sequence + (action,)
+                            extended_action_sequence = prev_action_sequence + action_tuple
 
                             extended_prob = prob_chain * prob_additional
 
@@ -248,12 +253,16 @@ def extendCompositeMDP(mdp, discount, prevPeriodMDP):
     for state in prevPeriodMDP.rewards.keys():
         compMDP.rewards[state] = {}
         for prev_action_sequence in prevPeriodMDP.rewards[state].keys():
+            if restricted_action_set is not None and prev_action_sequence not in restricted_action_set[state]:
+                continue
+
             prev_reward = prevPeriodMDP.rewards[state][prev_action_sequence]
 
             for action in mdp.actions:
                 if action in mdp.rewards[end_state]:
                     # extend chain by one action
-                    extended_action_sequence = prev_action_sequence + (action,)
+                    action_tuple = action if type(action) is tuple else (action,)
+                    extended_action_sequence = prev_action_sequence + action_tuple
 
                     extension_reward = 0
 
@@ -755,7 +764,7 @@ def qValuesFromR(mdp, discount, state_values, restricted_action_set = None):
 def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iterations, doLinearProg=False, greedy=-1):
 
     compMDP = convertSingleStepMDP(base_mdp)
-    pruned_action_set = {state: [action for action in compMDP.actions] for state in base_mdp.states}
+    pruned_action_set = {state: set([action for action in compMDP.actions]) for state in base_mdp.states}
 
     upperBound = None
     lowerBound = None
@@ -770,14 +779,14 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
         start = time.time()
         if t > 1:
             # compMDP.actions = pruned_action_set
-            compMDP = extendCompositeMDP(base_mdp, discount, compMDP)
+            compMDP = extendCompositeMDP(base_mdp, discount, compMDP, pruned_action_set)
             # pruned_action_set = compMDP.actions
 
             for state in base_mdp.states:
-                extended_action_set = []
+                extended_action_set = set()
                 for prev_action_sequence in pruned_action_set[state]:
                     for action in base_mdp.actions:
-                        extended_action_set.append(prev_action_sequence + (action,))
+                        extended_action_set.add(prev_action_sequence + (action,))
                 pruned_action_set[state] = extended_action_set
 
         if t >= checkin_period:
@@ -1214,24 +1223,6 @@ def countActionSimilarity(mdp, thresh):
 
     for state in mdp.states:
         s1 = time.time()
-        # actions = [np.array([(mdp.transitions[state][action][end_state] if end_state in mdp.transitions[state][action] else 0) for end_state in mdp.states]) for action in mdp.actions]
-        # s2 = time.time()
-        # tA += s2 - s1
-        
-        # vals = [(abs(mdp.rewards[state][mdp.actions[i]] - mdp.rewards[state][mdp.actions[j]]) + (1 - np.dot(actions[i], actions[j]) / np.linalg.norm(actions[i]) / np.linalg.norm(actions[j]))) for i in range(len(mdp.actions) - 1) for j in range(i+1, len(mdp.actions))]
-
-        # s3 = time.time()
-        # tC += s3 - s2
-
-        # vals_n = np.array(vals)
-
-        # s4 = time.time()
-        # tD += s4 - s3
-
-        # count += len(np.where(vals_n <= thresh)[0])
-
-        # s5 = time.time()
-        # tE += s5 - s4
 
         actions = np.zeros((len(mdp.actions), len(mdp.states)))
         for action in mdp.transitions[state]:
@@ -1260,7 +1251,6 @@ def countActionSimilarity(mdp, thresh):
 
         total_diffs = reward_diffs + differences
 
-        
         s4 = time.time()
         tD += s4 - s3
 
@@ -1275,49 +1265,12 @@ def countActionSimilarity(mdp, thresh):
         
         num_removed = len(G.nodes) - len(connected_components)
 
-        # if state == (1,2):
-        #     print("shape",total_diffs.shape)
-        #     print(indices_filtered)
-        #     print("indices",len(indices[0]))
-        #     print("filtered",len(filtered))
-        #     print("present",len(G.nodes))
-        #     print("clusters",connected_components)
-        #     print("removed",num_removed)
-
         count += num_removed
 
         s5 = time.time()
         tE += s5 - s4
 
         counts[state] = num_removed
-
-
-
-
-        # for i in range(len(mdp.actions) - 1):
-        #     actionA = mdp.actions[i]
-        #     rewardA = mdp.rewards[state][actionA]
-        #     transitionsA = actions[i]
-
-        #     for j in range(i+1, len(mdp.actions)):
-        #         actionB = mdp.actions[j]
-        #         rewardB = mdp.rewards[state][actionB]
-        #         transitionsB = actions[j]
-
-        #         cost_difference = abs(rewardA - rewardB)
-
-        #         # cosine similarity, 1 is same, 0 is orthogonal, and -1 is opposite
-        #         transition_similarity = np.dot(transitionsA, transitionsB) / np.linalg.norm(transitionsA) / np.linalg.norm(transitionsB)
-        #         # difference, 0 is same, 1 is orthogonal, 2 is opposite
-        #         transition_difference = 1 - transition_similarity
-
-        #         total_difference = 1 * cost_difference + 1 * transition_difference
-
-        #         if total_difference <= thresh:
-        #             count += 1
-
-        # s3 = time.time()
-        # tB += s3 - s2
 
     print(tA)
     print(tB)
@@ -1443,12 +1396,13 @@ grid, mdp, discount, start_state = splitterGrid()#paper2An(3)#, 0.9999)
 end = time.time()
 print("MDP creation time:", end - start)
 
-checkin_period = 5
+checkin_period = 4
 
 #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
-# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP
+run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True) # BNB w/ LP w/ greedy
+# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP w/ greedy
 
 # runCheckinSteps(1, 20)
 
@@ -1456,25 +1410,25 @@ checkin_period = 5
 
 
 
-compMDP = createCompositeMDP(mdp, discount, checkin_period)
-print("Actions:",len(mdp.actions),"->",len(compMDP.actions))
+# compMDP = createCompositeMDP(mdp, discount, checkin_period)
+# print("Actions:",len(mdp.actions),"->",len(compMDP.actions))
 
-end1 = time.time()
-print("MDP composite time:", end1 - end)
+# end1 = time.time()
+# print("MDP composite time:", end1 - end)
 
-thresh = 1e-5
-# diffs = checkActionSimilarity(compMDP)
-count, counts = countActionSimilarity(compMDP, thresh)
+# thresh = 1e-5
+# # diffs = checkActionSimilarity(compMDP)
+# count, counts = countActionSimilarity(compMDP, thresh)
 
-end2 = time.time()
-print("Similarity time:", end2 - end1)
+# end2 = time.time()
+# print("Similarity time:", end2 - end1)
 
-# count, counts = countSimilarity(compMDP, diffs, 2, thresh)
-percTotal = "{:.2f}".format(count / (len(compMDP.states) * len(compMDP.actions)) * 100)
-percStart = "{:.2f}".format(counts[start_state] / (len(compMDP.actions)) * 100)
-print(start_state)
-print(f"{len(compMDP.states)} states {len(compMDP.actions)} actions per state")
-print(f"Pairs under {thresh} total: {count} / {len(compMDP.states) * len(compMDP.actions)} ({percTotal}%)")
-print(f"Pairs under {thresh} in start state: {counts[start_state]} / {len(compMDP.actions)} ({percStart}%)")
+# # count, counts = countSimilarity(compMDP, diffs, 2, thresh)
+# percTotal = "{:.2f}".format(count / (len(compMDP.states) * len(compMDP.actions)) * 100)
+# percStart = "{:.2f}".format(counts[start_state] / (len(compMDP.actions)) * 100)
+# print(start_state)
+# print(f"{len(compMDP.states)} states {len(compMDP.actions)} actions per state")
+# print(f"Pairs under {thresh} total: {count} / {len(compMDP.states) * len(compMDP.actions)} ({percTotal}%)")
+# print(f"Pairs under {thresh} in start state: {counts[start_state]} / {len(compMDP.actions)} ({percStart}%)")
 
-# visualizeActionSimilarity(compMDP, diffs, start_state, f"-{checkin_period}")
+# # visualizeActionSimilarity(compMDP, diffs, start_state, f"-{checkin_period}")
