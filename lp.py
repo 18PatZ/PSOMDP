@@ -11,11 +11,13 @@ import time
 # -> 58% faster
 
 def makeConstraint(mdp, discount, lp, v, state, action):
-    leSum = lp.scal_prod([v[end_state] for end_state in mdp.transitions[state][action].keys()], [mdp.transitions[state][action][end_state] for end_state in mdp.transitions[state][action].keys()])
+    a1 = [v[end_state] for end_state in mdp.transitions[state][action].keys()]
+    a2 = [mdp.transitions[state][action][end_state] for end_state in mdp.transitions[state][action].keys()]
+    leSum = lp.scal_prod(a1, a2)
     return v[state] >= (mdp.rewards[state][action] + discount * leSum)
 
 def makeConstraintsList(mdp, discount, lp, v, restricted_action_set):
-    return [makeConstraint(mdp, discount, lp, v, state, action) for state in mdp.states for action in (mdp.actions if restricted_action_set is None else restricted_action_set[state])]
+    return [makeConstraint(mdp, discount, lp, v, state, action) for state in mdp.states for action in (mdp.actions if restricted_action_set is None else restricted_action_set[state]) if action in mdp.transitions[state]]
 
 def linearProgrammingSolve(grid, mdp, discount, restricted_action_set = None):
 
@@ -58,14 +60,15 @@ def linearProgrammingSolve(grid, mdp, discount, restricted_action_set = None):
         
         action_set = mdp.actions if restricted_action_set is None else restricted_action_set[state]
         for action in action_set:
-            expected_value = mdp.rewards[state][action]
-            for end_state in mdp.transitions[state][action].keys():
-                prob = mdp.transitions[state][action][end_state]
-                expected_value += discount * prob * values[end_state]
+            if action in mdp.transitions[state]:
+                expected_value = mdp.rewards[state][action]
+                for end_state in mdp.transitions[state][action].keys():
+                    prob = mdp.transitions[state][action][end_state]
+                    expected_value += discount * prob * values[end_state]
 
-            if max_expected is None or expected_value > max_expected:
-                best_action = action
-                max_expected = expected_value
+                if max_expected is None or expected_value > max_expected:
+                    best_action = action
+                    max_expected = expected_value
 
         if max_expected is None:
             max_expected = 0

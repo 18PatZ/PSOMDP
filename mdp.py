@@ -1047,28 +1047,76 @@ def paper2A():
     return paper2An(3)
 
 
-def splitterGrid():
+def corridorTwoCadence(n, cadence1, cadence2, discount = math.sqrt(0.99)):
+    goalActionReward = 10000
+    noopReward = 0#-1
+    wallPenalty = -300000
+    movePenalty = -1
+
+    moveProb = 0.9
+
+    grid = [
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]
+    ]
+
+    for i in range(n):
+        for j in range(cadence1-1):
+            for k in range(len(grid)):
+                grid[k] += [0]
+        grid[0] += [0]
+        grid[1] += [1]
+        grid[2] += [0]
+        grid[3] += [1]
+        grid[4] += [0]
+
+    for i in range(n):
+        for j in range(cadence2-1):
+            for k in range(len(grid)):
+                grid[k] += [0]
+        grid[0] += [0]
+        grid[1] += [1]
+        grid[2] += [0]
+        grid[3] += [1]
+        grid[4] += [0]
+    
+    grid[0] += [0, 0, 0]
+    grid[1] += [0, 0, 0]
+    grid[2] += [0, 0, 2]
+    grid[3] += [0, 0, 0]
+    grid[4] += [0, 0, 0]
+
+    start_state = (1, 2)
+
+    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
+    return grid, mdp, discount, start_state
+
+
+def splitterGrid(rows = 8, discount = math.sqrt(0.9)):
     goalActionReward = 10000
     noopReward = 0#-1
     wallPenalty = -50000
     movePenalty = -1
 
     moveProb = 0.9
-    discount = math.sqrt(0.9)
+    # discount = math.sqrt(0.9)
 
     grid = []
     
-    rows = 8
+    # rows = 8
     p1 = 2
     p2 = 3
 
-    maxN = 3
+    maxN = math.floor(rows / 3)#3
     nL = 0
     nR = 0
 
     for i in range(rows):
         row = None
-        if nL < maxN and (rows-i) % p1 == 1:
+        if nL < maxN and i % p1 == 1:#(rows-i) % p1 == 1:
             nL += 1
             row = [0, 1, 0, 1, 0, 1]
         else:
@@ -1076,7 +1124,7 @@ def splitterGrid():
 
         row.append(2 if i == 0 else 1)
 
-        if nR < maxN and (rows-i) % p2 == 1:
+        if nR < maxN and i % p2 == 1:#(rows-i) % p2 == 1:
             nR += 1
             row += [1, 0, 1, 0, 1, 0]
         else:
@@ -1453,24 +1501,113 @@ def countSimilarity(mdp, diffs, diffType, thresh):
     return count, counts
 
 
-start = time.time()
+def blendMDP(mdp1, mdp2, stepsFromState, stateReference):
 
-grid, mdp, discount, start_state = splitterGrid()#paper2An(3)#, 0.9999)
+    mdp = MDP([], [], {}, {}, [])
+    mdp.states = mdp1.states
+    mdp.terminals = mdp1.terminals
 
-end = time.time()
-print("MDP creation time:", end - start)
+    for state in mdp1.states:
+        manhattanDist = abs(state[0] - stateReference[0]) + abs(state[1] - stateReference[1])
+        mdpToUse = mdp1 if manhattanDist < stepsFromState else mdp2
 
-checkin_period = 5
+        mdp.transitions[state] = mdpToUse.transitions[state]
+        mdp.rewards[state] = {}
+        for action in mdpToUse.transitions[state].keys():
+            if action not in mdp.actions:
+                mdp.actions.append(action)
+            if action in mdpToUse.rewards[state]:
+                mdp.rewards[state][action] = mdpToUse.rewards[state][action]
+
+    return mdp
+        
+
+def runTwoCadence(checkin1, checkin2):
+
+    n1 = 3
+    grid, mdp, discount, start_state = corridorTwoCadence(n=n1, cadence1=checkin1, cadence2=checkin2)
+    policy = None
+    values = None
+    
+    start = time.time()
+    elapsed = None
+
+    compMDP1 = createCompositeMDP(mdp, discount, checkin1)
+    compMDP2 = createCompositeMDP(mdp, discount, checkin2)
+    print("Actions:",len(mdp.actions),"->",str(len(compMDP1.actions)) + ", " + str(len(compMDP2.actions)))
+
+    end1 = time.time()
+    print("MDP composite time:", end1 - start)
+
+    tB = 0
+    tL = 0
+
+    bestK = -1
+    bestStartVal = -1
+    bestBlendedMDP = None
+    bestPolicy = None
+    bestValues = None
+    vals = []
+
+    for k in range(4,5):#0, 14):
+        b1 = time.time()
+        blendedMDP = blendMDP(mdp1 = compMDP1, mdp2 = compMDP2, stepsFromState = k, stateReference=start_state)
+        tB += time.time() - b1
+
+        discount_t = discount#pow(discount, checkin_period)
+
+        l1 = time.time()
+        policy, values = linearProgrammingSolve(grid, blendedMDP, discount_t)
+        tL += time.time() - l1
+
+        vals.append(values[start_state])
+        
+        if values[start_state] > bestStartVal:
+            bestStartVal = values[start_state] 
+            bestK = k
+            bestBlendedMDP = blendedMDP
+            bestPolicy = policy
+            bestValues = values
+
+    print("Best K:", bestK)
+    print("Values", vals)
+    # print("Val diff:", vals[(n1-1)*2] - vals[0])
+
+    print("MDP blend time:", tB)
+    print("MDP linear programming time:", tL)
+    
+    end = time.time()
+    print("MDP total time:", end - start)
+    elapsed = end - start
+
+    print("Start state value:",bestValues[start_state])
+
+    draw(grid, bestBlendedMDP, bestValues, bestPolicy, True, False, "output/policy-comp-"+str(checkin1)+"v"+str(checkin2)+"-lp")
+
+    return bestValues[start_state], elapsed
+
+
+
+# start = time.time()
+
+# grid, mdp, discount, start_state = paper2An(3)#splitterGrid(rows = 50, discount=0.99)#paper2An(3)#, 0.9999)
+
+# end = time.time()
+# print("MDP creation time:", end - start)
+
+# checkin_period = 8
 
 #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
 
-run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True, 
-    doSimilarityCluster=True, simClusterParams=(4, 1e-5)) # LP w/ similarity clustering
+# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True, 
+#     doSimilarityCluster=True, simClusterParams=(7, 1e-5)) # LP w/ similarity clustering
 
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True) # BNB w/ LP w/ greedy
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP w/ greedy
+
+runTwoCadence(2, 3)
 
 # runCheckinSteps(1, 20)
 
