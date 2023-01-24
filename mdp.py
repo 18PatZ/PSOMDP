@@ -1586,11 +1586,137 @@ def runTwoCadence(checkin1, checkin2):
 
     return bestValues[start_state], elapsed
 
+def runOneValueIterationPass(prev_values, discount, mdp):
+    new_values = {}
+
+    for state in mdp.states:
+        max_expected = -1e20
+        for action in mdp.actions:
+            expected_value = mdp.rewards[state][action]
+            future_value = 0
+
+            for end_state in mdp.transitions[state][action].keys():
+                prob = mdp.transitions[state][action][end_state]
+                future_value += discount * prob * prev_values[end_state]
+
+            expected_value += future_value
+
+            max_expected = max(max_expected, expected_value)
+        new_values[state] = max_expected
+
+    return new_values
+
+def policyFromValues(mdp, values, restricted_action_set = None):
+    policy = {}
+    for state in mdp.states:
+        best_action = None
+        max_expected = None
+        
+        action_set = mdp.actions if restricted_action_set is None else restricted_action_set[state]
+        for action in action_set:
+            if action in mdp.transitions[state]:
+                expected_value = mdp.rewards[state][action]
+                for end_state in mdp.transitions[state][action].keys():
+                    prob = mdp.transitions[state][action][end_state]
+                    expected_value += discount * prob * values[end_state]
+
+                if max_expected is None or expected_value > max_expected:
+                    best_action = action
+                    max_expected = expected_value
+
+        if max_expected is None:
+            max_expected = 0
+        
+        policy[state] = best_action
+    return policy
+
+def calculateChainValues(grid, mdp, discount, start_state, checkin_periods, chain_length):
+    all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
+    compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
+
+    chains_list = []
+    all_values = {}
+    all_policies = {}
+
+    chains = []
+    for k in checkin_periods:
+        discount_t = pow(discount, k)
+
+        policy, values = linearProgrammingSolve(grid, compMDPs[k], discount_t)
+        chains.append(([k], values, [policy]))
+        all_values[tuple([k])] = values
+        all_policies[tuple([k])] = policy
+    chains_list.append(chains)
+
+    for i in range(1, chain_length):
+        previous_chains = chains_list[i - 1]
+        chains = []
+
+        for tail in previous_chains:
+            for k in checkin_periods:
+                compMDP = compMDPs[k]
+
+                chain = list(tail[0])
+                chain.insert(0, k)
+
+                tail_values = tail[1]
+                discount_t = pow(discount, k)
+
+                new_values = runOneValueIterationPass(tail_values, discount_t, compMDP)
+
+                policies = list(tail[2])
+                policy = policyFromValues(compMDP, tail_values)
+                policies.insert(0, policy)
+
+                all_values[tuple(chain)] = new_values
+                all_policies[tuple(chain)] = policy
+                
+                chains.append((chain, new_values, policies))
+
+        chains_list.append(chains)
+
+    full_chains = chains_list[-1]
+    full_chains = sorted(full_chains, key=lambda chain: chain[1][start_state], reverse=True)
+    for chain in full_chains:
+        name = ""
+        for checkin in chain[0]:
+            name += str(checkin)
+        name += "*"
+
+        values = chain[1]
+
+        print(name + ":", values[start_state])
+
+    best_chain = full_chains[0]
+    name = ""
+    for checkin in best_chain[0]:
+        name += str(checkin)
+    name += "*"
+
+    for i in range(0, len(best_chain[0])):
+        k = best_chain[0][i]
+        compMDP = compMDPs[k]
+        
+        tail = tuple(best_chain[0][i:])
+        
+        values = all_values[tail]
+        policy = all_policies[tail]
+        
+        draw(grid, compMDP, values, policy, True, False, "output/policy-comp-"+name+"-"+str(i))
+
+
+
+
+
+
+
 
 
 # start = time.time()
 
 # grid, mdp, discount, start_state = paper2An(3)#splitterGrid(rows = 50, discount=0.99)#paper2An(3)#, 0.9999)
+
+grid, mdp, discount, start_state = corridorTwoCadence(n=3, cadence1=2, cadence2=3)
 
 # end = time.time()
 # print("MDP creation time:", end - start)
@@ -1607,7 +1733,8 @@ def runTwoCadence(checkin1, checkin2):
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True) # BNB w/ LP w/ greedy
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP w/ greedy
 
-runTwoCadence(2, 3)
+# runTwoCadence(2, 3)
+calculateChainValues(grid, mdp, discount, start_state, [2, 3], 3)
 
 # runCheckinSteps(1, 20)
 
