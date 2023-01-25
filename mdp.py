@@ -1630,6 +1630,19 @@ def policyFromValues(mdp, values, restricted_action_set = None):
         policy[state] = best_action
     return policy
 
+def expectedMarkovHittingTime(mdp, transition_matrix, target_state):
+    n = len(mdp.states)
+    
+    I = np.identity(n)
+
+def markovProbsFromPolicy(mdp, policy):
+    transition_matrix = []
+    for start_state in mdp.states:
+        action = policy[start_state]
+        row = [(mdp.transitions[start_state][action][end_state] if action is not None and end_state in mdp.transitions[start_state][action] else 0) for end_state in mdp.states]
+        transition_matrix.append(row)
+    return np.array(transition_matrix)
+
 def calculateChainValues(grid, mdp, discount, start_state, checkin_periods, chain_length):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
