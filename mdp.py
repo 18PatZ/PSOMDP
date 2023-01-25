@@ -1800,10 +1800,18 @@ def drawChainsParetoFront(chains):
     y = [chain[2] for chain in chains]
     labels = [chain[0] for chain in chains]
 
+    costs = np.array([[chain[1], chain[2]] for chain in chains])
+
+    is_efficient = np.ones(len(chains), dtype = bool)
+    for i, c in enumerate(costs):
+        is_efficient[i] = np.all(np.any(costs[:i]>c, axis=1)) and np.all(np.any(costs[i+1:]>c, axis=1))
+
     plt.style.use('seaborn-whitegrid')
     
     fig, ax = plt.subplots()
-    ax.scatter(x, y)
+    ax.scatter(x, y, c=["red" if is_efficient[i] else "black" for i in range(len(chains))])
+    # for i in range(len(chains)):
+    #     plt.plot(x[i], y[i])
 
     
     for i in range(len(labels)):
