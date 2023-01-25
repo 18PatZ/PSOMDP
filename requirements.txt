@@ -4,3 +4,4 @@ matplotlib
 docplex
 pygraphviz
 pandas
+scikit-learn

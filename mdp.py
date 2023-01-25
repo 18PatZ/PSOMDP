@@ -1047,7 +1047,7 @@ def paper2A():
     return paper2An(3)
 
 
-def corridorTwoCadence(n, cadence1, cadence2, discount = math.sqrt(0.99)):
+def corridorTwoCadence(n1, n2, cadence1, cadence2, discount = math.sqrt(0.99)):
     goalActionReward = 10000
     noopReward = 0#-1
     wallPenalty = -300000
@@ -1063,7 +1063,7 @@ def corridorTwoCadence(n, cadence1, cadence2, discount = math.sqrt(0.99)):
         [0]
     ]
 
-    for i in range(n):
+    for i in range(n1):
         for j in range(cadence1-1):
             for k in range(len(grid)):
                 grid[k] += [0]
@@ -1073,7 +1073,7 @@ def corridorTwoCadence(n, cadence1, cadence2, discount = math.sqrt(0.99)):
         grid[3] += [1]
         grid[4] += [0]
 
-    for i in range(n):
+    for i in range(n2):
         for j in range(cadence2-1):
             for k in range(len(grid)):
                 grid[k] += [0]
@@ -1083,11 +1083,16 @@ def corridorTwoCadence(n, cadence1, cadence2, discount = math.sqrt(0.99)):
         grid[3] += [1]
         grid[4] += [0]
     
-    grid[0] += [0, 0, 0]
-    grid[1] += [0, 0, 0]
-    grid[2] += [0, 0, 2]
-    grid[3] += [0, 0, 0]
-    grid[4] += [0, 0, 0]
+    # grid[0] += [0, 0, 0]
+    # grid[1] += [0, 0, 0]
+    # grid[2] += [0, 0, 2]
+    # grid[3] += [0, 0, 0]
+    # grid[4] += [0, 0, 0]
+    grid[0] += [0, 0]
+    grid[1] += [0, 0]
+    grid[2] += [0, 2]
+    grid[3] += [0, 0]
+    grid[4] += [0, 0]
 
     start_state = (1, 2)
 
@@ -1525,7 +1530,7 @@ def blendMDP(mdp1, mdp2, stepsFromState, stateReference):
 def runTwoCadence(checkin1, checkin2):
 
     n1 = 3
-    grid, mdp, discount, start_state = corridorTwoCadence(n=n1, cadence1=checkin1, cadence2=checkin2)
+    grid, mdp, discount, start_state = corridorTwoCadence(n1=n1, n2=n1, cadence1=checkin1, cadence2=checkin2)
     policy = None
     values = None
     
@@ -1630,10 +1635,45 @@ def policyFromValues(mdp, values, restricted_action_set = None):
         policy[state] = best_action
     return policy
 
-def expectedMarkovHittingTime(mdp, transition_matrix, target_state):
+
+def extendMarkovHittingTime(mdp, transition_matrix, target_state, checkin_period, prev_hitting_times):
+    H = []
+    for i in range(len(mdp.states)):
+        h_i = 0
+        if mdp.states[i] != target_state:
+            h_i = checkin_period
+            for j in range(len(mdp.states)):
+                h_i += transition_matrix[i][j] * prev_hitting_times[j]
+        H.append(h_i)
+    return H
+
+
+def expectedMarkovHittingTime(mdp, transition_matrix, target_state, checkin_period):
+    # H_i = hitting time from state i to target state
+    # H_F = hitting time from target state to itself (0)
+    # H_i = 1 + sum (p_ij * H_j) over all states j (replace 1 with checkin period)
+    
+    # (I - P) H = [1, 1, ..., 1] 
+    #   where row in P corresponding to target state is zero'd 
+    #   and element in right vector corresponding to target state is zero'd
+
     n = len(mdp.states)
+
+    target_index = mdp.states.index(target_state)
     
     I = np.identity(n)
+    P = np.matrix.copy(transition_matrix)
+    C = np.full(n, checkin_period)#np.ones(n)
+    
+    C[target_index] = 0
+    P[target_index] = 0
+
+    A = I - P
+
+    H = np.linalg.solve(A, C) # Ax = C
+
+    return H
+
 
 def markovProbsFromPolicy(mdp, policy):
     transition_matrix = []
@@ -1643,7 +1683,7 @@ def markovProbsFromPolicy(mdp, policy):
         transition_matrix.append(row)
     return np.array(transition_matrix)
 
-def calculateChainValues(grid, mdp, discount, start_state, checkin_periods, chain_length):
+def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin_periods, execution_cost_factor, checkin_costs, chain_length):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
@@ -1654,9 +1694,15 @@ def calculateChainValues(grid, mdp, discount, start_state, checkin_periods, chai
     chains = []
     for k in checkin_periods:
         discount_t = pow(discount, k)
+        compMDP = compMDPs[k]
 
-        policy, values = linearProgrammingSolve(grid, compMDPs[k], discount_t)
-        chains.append(([k], values, [policy]))
+        policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
+        
+        markov = markovProbsFromPolicy(compMDP, policy)
+        hitting_time = expectedMarkovHittingTime(mdp, markov, target_state, k)
+        hitting_checkins = expectedMarkovHittingTime(mdp, markov, target_state, 1)
+
+        chains.append(([k], values, [policy], (hitting_time, hitting_checkins)))
         all_values[tuple([k])] = values
         all_policies[tuple([k])] = policy
     chains_list.append(chains)
@@ -1681,15 +1727,26 @@ def calculateChainValues(grid, mdp, discount, start_state, checkin_periods, chai
                 policy = policyFromValues(compMDP, tail_values)
                 policies.insert(0, policy)
 
+                markov = markovProbsFromPolicy(compMDP, policy)
+                prev_hitting_time = tail[3][0]
+                prev_hitting_checkins = tail[3][1]
+                hitting_time = extendMarkovHittingTime(mdp, markov, target_state, k, prev_hitting_time)
+                hitting_checkins = extendMarkovHittingTime(mdp, markov, target_state, 1, prev_hitting_checkins)
+
                 all_values[tuple(chain)] = new_values
                 all_policies[tuple(chain)] = policy
                 
-                chains.append((chain, new_values, policies))
+                chains.append((chain, new_values, policies, (hitting_time, hitting_checkins)))
 
         chains_list.append(chains)
 
+    start_state_index = mdp.states.index(start_state)
+
     full_chains = chains_list[-1]
     full_chains = sorted(full_chains, key=lambda chain: chain[1][start_state], reverse=True)
+
+    costs = []
+
     for chain in full_chains:
         name = ""
         for checkin in chain[0]:
@@ -1697,27 +1754,65 @@ def calculateChainValues(grid, mdp, discount, start_state, checkin_periods, chai
         name += "*"
 
         values = chain[1]
+        hitting = chain[3]
 
-        print(name + ":", values[start_state])
+        hitting_time = hitting[0][start_state_index]
+        hitting_checkins = hitting[1][start_state_index]
 
-    best_chain = full_chains[0]
-    name = ""
-    for checkin in best_chain[0]:
-        name += str(checkin)
-    name += "*"
-
-    for i in range(0, len(best_chain[0])):
-        k = best_chain[0][i]
-        compMDP = compMDPs[k]
+        execution_cost = execution_cost_factor * hitting_time
+        checkin_cost = 0
         
-        tail = tuple(best_chain[0][i:])
-        
-        values = all_values[tail]
-        policy = all_policies[tail]
-        
-        draw(grid, compMDP, values, policy, True, False, "output/policy-comp-"+name+"-"+str(i))
+        t = hitting_checkins
+        i = 0
+        while t > 0:
+            k = chain[0][i]
+            factor = 1 if t >= 1 else t
+            checkin_cost += checkin_costs[k] * factor
+            t -= 1
+            i += 1
+            if i >= len(chain[0]):
+                i = len(chain[0]) - 1
 
+        print(name + ":", values[start_state], "| Hitting time:", hitting_time, "| Hitting checkins:", hitting_checkins, "| Execution cost:", execution_cost, "| Checkin cost:", checkin_cost)
+        costs.append((name, execution_cost, checkin_cost))
+    
+    return costs
 
+    # best_chain = full_chains[0]
+    # name = ""
+    # for checkin in best_chain[0]:
+    #     name += str(checkin)
+    # name += "*"
+
+    # for i in range(0, len(best_chain[0])):
+    #     k = best_chain[0][i]
+    #     compMDP = compMDPs[k]
+        
+    #     tail = tuple(best_chain[0][i:])
+        
+    #     values = all_values[tail]
+    #     policy = all_policies[tail]
+        
+    #     draw(grid, compMDP, values, policy, True, False, "output/policy-comp-"+name+"-"+str(i))
+
+def drawChainsParetoFront(chains):
+    x = [chain[1] for chain in chains]
+    y = [chain[2] for chain in chains]
+    labels = [chain[0] for chain in chains]
+
+    plt.style.use('seaborn-whitegrid')
+    
+    fig, ax = plt.subplots()
+    ax.scatter(x, y)
+
+    
+    for i in range(len(labels)):
+        ax.annotate(labels[i], (x[i], y[i]))
+
+    plt.xlabel("Execution Cost")
+    plt.ylabel("Checkin Cost")
+
+    plt.show()
 
 
 
@@ -1729,7 +1824,7 @@ def calculateChainValues(grid, mdp, discount, start_state, checkin_periods, chai
 
 # grid, mdp, discount, start_state = paper2An(3)#splitterGrid(rows = 50, discount=0.99)#paper2An(3)#, 0.9999)
 
-grid, mdp, discount, start_state = corridorTwoCadence(n=3, cadence1=2, cadence2=3)
+grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, cadence2=3)
 
 # end = time.time()
 # print("MDP creation time:", end - start)
@@ -1747,7 +1842,22 @@ grid, mdp, discount, start_state = corridorTwoCadence(n=3, cadence1=2, cadence2=
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=True, bnbGreedy=800) # BNB w/ LP w/ greedy
 
 # runTwoCadence(2, 3)
-calculateChainValues(grid, mdp, discount, start_state, [2, 3], 3)
+target_state = None
+for y in range(len(grid)):
+    for x in range(len(grid[y])):
+        state = (x, y)
+        state_type = grid[y][x]
+
+        if state_type == TYPE_GOAL:
+            target_state = state
+            break
+
+chains = calculateChainValues(grid, mdp, discount, start_state, target_state, 
+    checkin_periods=[2, 3, 4], 
+    execution_cost_factor=1, 
+    checkin_costs={2: 10, 3: 5, 4: 2}, 
+    chain_length=3)
+drawChainsParetoFront(chains)
 
 # runCheckinSteps(1, 20)
 
