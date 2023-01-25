@@ -1759,19 +1759,21 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
         hitting_time = hitting[0][start_state_index]
         hitting_checkins = hitting[1][start_state_index]
 
-        execution_cost = execution_cost_factor * hitting_time
-        checkin_cost = 0
+        checkin_cost = hitting_checkins
+        execution_cost = - values[start_state]
+        #execution_cost = execution_cost_factor * hitting_time
+        #checkin_cost = 0
         
-        t = hitting_checkins
-        i = 0
-        while t > 0:
-            k = chain[0][i]
-            factor = 1 if t >= 1 else t
-            checkin_cost += checkin_costs[k] * factor
-            t -= 1
-            i += 1
-            if i >= len(chain[0]):
-                i = len(chain[0]) - 1
+        # t = hitting_checkins
+        # i = 0
+        # while t > 0:
+        #     k = chain[0][i]
+        #     factor = 1 if t >= 1 else t
+        #     checkin_cost += checkin_costs[k] * factor
+        #     t -= 1
+        #     i += 1
+        #     if i >= len(chain[0]):
+        #         i = len(chain[0]) - 1
 
         print(name + ":", values[start_state], "| Hitting time:", hitting_time, "| Hitting checkins:", hitting_checkins, "| Execution cost:", execution_cost, "| Checkin cost:", checkin_cost)
         costs.append((name, execution_cost, checkin_cost))
@@ -1807,15 +1809,24 @@ def drawChainsParetoFront(chains):
         is_efficient[i] = np.all(np.any(costs[:i]>c, axis=1)) and np.all(np.any(costs[i+1:]>c, axis=1))
 
     plt.style.use('seaborn-whitegrid')
+
+    chains_filtered = []
+    for i in range(len(chains)):
+        if is_efficient[i]:
+            chains_filtered.append(chains[i])
+    x_f = [chain[1] for chain in chains_filtered]
+    y_f = [chain[2] for chain in chains_filtered]
+    labels_f = [chain[0] for chain in chains_filtered]
     
     fig, ax = plt.subplots()
-    ax.scatter(x, y, c=["red" if is_efficient[i] else "black" for i in range(len(chains))])
+    # ax.scatter(x, y, c=["red" if is_efficient[i] else "black" for i in range(len(chains))])
+    ax.scatter(x_f, y_f, c="red")
     # for i in range(len(chains)):
     #     plt.plot(x[i], y[i])
 
     
-    for i in range(len(labels)):
-        ax.annotate(labels[i], (x[i], y[i]))
+    for i in range(len(labels_f)):
+        ax.annotate(labels_f[i], (x_f[i], y_f[i]))
 
     plt.xlabel("Execution Cost")
     plt.ylabel("Checkin Cost")
@@ -1864,7 +1875,7 @@ chains = calculateChainValues(grid, mdp, discount, start_state, target_state,
     checkin_periods=[2, 3, 4], 
     execution_cost_factor=1, 
     checkin_costs={2: 10, 3: 5, 4: 2}, 
-    chain_length=3)
+    chain_length=4)
 drawChainsParetoFront(chains)
 
 # runCheckinSteps(1, 20)
