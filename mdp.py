@@ -1722,8 +1722,8 @@ def getStateDistributionParetoValues(mdp, chain, distributions):
             dist_checkin_cost += distribution[i] * checkin_cost
             dist_execution_cost += distribution[i] * execution_cost
 
-        pareto_values.append(dist_checkin_cost)
         pareto_values.append(dist_execution_cost)
+        pareto_values.append(dist_checkin_cost)
     return pareto_values
 
 def gaussian(mdp, center_state, sigma):
@@ -1880,7 +1880,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
         print(name + ":", values[start_state], "| Execution cost:", execution_cost, "| Checkin cost:", checkin_cost)
         # costs.append((name, execution_cost, checkin_cost))
         costs.append((name, pareto_values))
-        start_state_costs.append((name, [checkin_cost, execution_cost]))
+        start_state_costs.append((name, [execution_cost, checkin_cost]))
         
     return costs, start_state_costs
 
@@ -1904,8 +1904,8 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
 def scatter(ax, chains, doLabel, color, lcolor):
     # x = [chain[1][start_state_index * 2 + 1] for chain in chains]
     # y = [chain[1][start_state_index * 2] for chain in chains]
-    x = [chain[1][1] for chain in chains]
-    y = [chain[1][0] for chain in chains]
+    x = [chain[1][0] for chain in chains]
+    y = [chain[1][1] for chain in chains]
     labels = [chain[0] for chain in chains]
     
     ax.scatter(x, y, c=color)
@@ -1913,6 +1913,12 @@ def scatter(ax, chains, doLabel, color, lcolor):
     if doLabel:
         for i in range(len(labels)):
             ax.annotate(labels[i], (x[i], y[i]), color=lcolor)
+
+def lines(ax, chains, color):
+    x = [chain[1][0] for chain in chains]
+    y = [chain[1][1] for chain in chains]
+    
+    ax.plot(x, y, c=color)
 
 def calculateParetoFront(chains):
     return calculateParetoFrontC([chain[1] for chain in chains])
@@ -1926,7 +1932,52 @@ def calculateParetoFrontC(costs):
 
     return is_efficient
 
-def drawChainsParetoFront(chains, is_efficient):
+def areaUnderPareto(pareto_front):
+
+    area = 0
+
+    for i in range(len(pareto_front) - 1):
+        x_i = pareto_front[i][0]
+        y_i = pareto_front[i][1]
+
+        x_j = pareto_front[i+1][0]
+        y_j = pareto_front[i+1][1]
+
+        rectangle = y_i * (x_j - x_i)
+        triangle = (y_j - y_i) * (x_j - x_i) / 2.0
+
+        area += rectangle + triangle
+
+    return area
+
+def calculateError(chains, is_efficient, true_front):
+    chains_filtered = [chains[i] for i in range(len(chains)) if is_efficient[i]]
+    chains_filtered.sort(key = lambda chain: chain[1][0])
+
+    x_range = (true_front[-1][1][0] - true_front[0][1][0])
+    min_x = true_front[0][1][0]
+
+    min_y = None
+    max_y = None
+    for c in true_front:
+        y = c[1][1]
+        if min_y is None or y < min_y:
+            min_y = y
+        if max_y is None or y > max_y:
+            max_y = y
+        
+    y_range = (max_y - min_y)
+
+    chains_normalized = [[(c[1][0] - min_x) / x_range, (c[1][1] - min_y) / y_range] for c in chains_filtered]
+    true_normalized = [[(c[1][0] - min_x) / x_range, (c[1][1] - min_y) / y_range] for c in true_front]
+        
+
+    area = areaUnderPareto(chains_normalized)
+    area_true = areaUnderPareto(true_normalized)
+
+    return abs(area - area_true) / area_true
+
+def drawChainsParetoFront(chains, is_efficient, true_front):
     plt.style.use('seaborn-whitegrid')
 
     chains_filtered = []
@@ -1937,6 +1988,8 @@ def drawChainsParetoFront(chains, is_efficient):
         else:
             chains_dominated.append(chains[i])
 
+    chains_filtered.sort(key = lambda chain: chain[1][0])
+
     print("Non-dominated chains:")
     for chain in chains_filtered:
         print("  ", chain[0])
@@ -1945,12 +1998,21 @@ def drawChainsParetoFront(chains, is_efficient):
     # labels_f = [chain[0] for chain in chains_filtered]
 
     print(len(chains_dominated),"dominated chains out of",len(chains),"|",len(chains_filtered),"non-dominated")
+
+    # costs = [chain[1] for chain in chains_filtered]
+    print("Pareto front:",chains_filtered)
     
     fig, ax = plt.subplots()
     # ax.scatter(x, y, c=["red" if is_efficient[i] else "black" for i in range(len(chains))])
     # ax.scatter(x_f, y_f, c="red")
+    lines(ax, true_front, color="green")
+    scatter(ax, true_front, doLabel=True, color="green", lcolor="green")
+    
     scatter(ax, chains_dominated, doLabel=True, color="orange", lcolor="gray")
+    
+    lines(ax, chains_filtered, color="red")
     scatter(ax, chains_filtered, doLabel=True, color="red", lcolor="black")
+    
     # for i in range(len(chains)):
     #     plt.plot(x[i], y[i])
 
@@ -2008,9 +2070,11 @@ for i in range(len(mdp.states)):
     distStart.append(1 if i == start_state_index else 0)
 distributions.append(distStart)
 
-distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
+# distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
 # distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
 # distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
+
+TRUTH = [('223*', [-1471895.5491260004, 10.36207210840559]), ('23*', [-1466111.360834025, 10.272072943363703]), ('2343*', [-1459989.7576398463, 10.188573289663607]), ('2234*', [-1442990.0823133066, 9.440067985664028]), ('2334*', [-1437776.5013845253, 9.358111758033958]), ('234*', [-1432535.7535183069, 9.268943242061733]), ('24*', [-1425204.691571236, 9.26894324206173])]
 
 costs, start_state_costs = calculateChainValues(grid, mdp, discount, start_state, target_state, 
     checkin_periods=[2, 3, 4], 
@@ -2025,7 +2089,10 @@ is_efficient = calculateParetoFront(start_state_costs)
 c_end = time.time()
 print("Chain evaluation time:", c_end - c_start)
 
-drawChainsParetoFront(start_state_costs, is_efficient)
+error = calculateError(start_state_costs, is_efficient, TRUTH)
+print("Error from true Pareto:",error)
+
+drawChainsParetoFront(start_state_costs, is_efficient, TRUTH)
 
 # runCheckinSteps(1, 20)
 
