@@ -1747,12 +1747,26 @@ def gaussian(mdp, center_state, sigma):
     
     return dist
 
-def step_filter(new_chains, all_chains, distributions):
+def step_filter(new_chains, all_chains, distributions, margin):
 
     costs = [getStateDistributionParetoValues(mdp, chain, distributions) for chain in all_chains]
     is_efficient = calculateParetoFrontC(costs)
 
     filtered_all_chains = [all_chains[i] for i in range(len(all_chains)) if is_efficient[i]]
+    front = [costs[i] for i in range(len(all_chains)) if is_efficient[i]]
+    toAdd = []
+
+    if margin > 0 or len(filtered_all_chains) < 2:
+        for i in range(len(all_chains)):
+            if not is_efficient[i]:
+                chain = all_chains[i]
+                dist = calculateDistance(chain, front) # we need to project it down
+                if dist <= margin:
+                    toAdd.append(chain)
+
+        for chain in toAdd:
+            filtered_all_chains.append(chain)
+
     filtered_new_chains = [chain for chain in new_chains if chain in filtered_all_chains] # can do this faster with index math
 
     return filtered_new_chains, filtered_all_chains
@@ -1773,7 +1787,7 @@ def chains_to_str(chains):
     return text
 
 
-def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin_periods, chain_length, do_filter, distributions):
+def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, margin):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
@@ -1833,7 +1847,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
                 all_chains.append(new_chain)
         
         if do_filter:
-            filtered_chains, filtered_all_chains = step_filter(chains, all_chains, distributions)
+            filtered_chains, filtered_all_chains = step_filter(chains, all_chains, distributions, margin)
             #print("Filtered from",len(chains),"to",len(filtered_chains),"new chains and",len(all_chains),"to",len(filtered_all_chains),"total.")
             og_len = len(all_chains) - len(chains)
             new_len_min_add = len(filtered_all_chains) - len(filtered_chains)
@@ -1949,6 +1963,72 @@ def areaUnderPareto(pareto_front):
         area += rectangle + triangle
 
     return area
+
+def lineseg_dists(p, a, b):
+    # Handle case where p is a single point, i.e. 1d array.
+    p = np.atleast_2d(p)
+
+    # TODO for you: consider implementing @Eskapp's suggestions
+    if np.all(a == b):
+        return np.linalg.norm(p - a, axis=1)
+
+    # normalized tangent vector
+    d = np.divide(b - a, np.linalg.norm(b - a))
+
+    # signed parallel distance components
+    s = np.dot(a - p, d)
+    t = np.dot(p - b, d)
+
+    # clamped parallel distance
+    h = np.maximum.reduce([s, t, np.zeros(len(p))])
+
+    # perpendicular distance component, as before
+    # note that for the 3D case these will be vectors
+    c = np.cross(p - a, d)
+
+    # use hypot for Pythagoras to improve accuracy
+    return np.hypot(h, c)
+
+def calculateDistance(chain, pareto_front):
+    # chains_filtered.sort(key = lambda chain: chain[1][0])
+
+    x_range = (pareto_front[-1][1][0] - pareto_front[0][1][0])
+    min_x = pareto_front[0][1][0]
+
+    min_y = None
+    max_y = None
+    for c in pareto_front:
+        y = c[1][1]
+        if min_y is None or y < min_y:
+            min_y = y
+        if max_y is None or y > max_y:
+            max_y = y
+        
+    y_range = (max_y - min_y)
+
+    x = (chain[1][0] - min_x) / x_range
+    y = (chain[1][1] - min_y) / y_range
+
+    front_normalized = [[(c[1][0] - min_x) / x_range, (c[1][1] - min_y) / y_range] for c in pareto_front]
+
+    min_dist = None
+
+    p = np.array([x, y])
+
+    for i in range(len(pareto_front) - 1):
+        x1 = pareto_front[i][0]
+        y1 = pareto_front[i][1]
+
+        x2 = pareto_front[i+1][0]
+        y2 = pareto_front[i+1][1]
+
+        # dist_to_line = abs((x2 - x1) * (y1 - y) - (x1 - x) * (y2 - y1)) / math.sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2))
+        dist_to_line = lineseg_dists(p, np.array([x1, y1]), np.array([x2, y2]))[0]
+        
+        if min_dist is None or dist_to_line < min_dist:
+            min_dist = dist_to_line
+
+    return min_dist
 
 def calculateError(chains, is_efficient, true_front):
     chains_filtered = [chains[i] for i in range(len(chains)) if is_efficient[i]]
@@ -2070,7 +2150,7 @@ for i in range(len(mdp.states)):
     distStart.append(1 if i == start_state_index else 0)
 distributions.append(distStart)
 
-# distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
+distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
 # distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
 # distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
 
@@ -2082,7 +2162,8 @@ costs, start_state_costs = calculateChainValues(grid, mdp, discount, start_state
     # checkin_costs={2: 10, 3: 5, 4: 2}, 
     chain_length=4,
     do_filter = True, 
-    distributions=distributions)
+    distributions=distributions, 
+    margin=0.5)
 
 is_efficient = calculateParetoFront(start_state_costs)
 
