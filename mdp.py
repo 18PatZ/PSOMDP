@@ -1747,14 +1747,37 @@ def gaussian(mdp, center_state, sigma):
     
     return dist
 
-def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin_periods, chain_length):
+def step_filter(new_chains, all_chains, distributions):
+
+    costs = [getStateDistributionParetoValues(mdp, chain, distributions) for chain in all_chains]
+    is_efficient = calculateParetoFrontC(costs)
+
+    filtered_all_chains = [all_chains[i] for i in range(len(all_chains)) if is_efficient[i]]
+    filtered_new_chains = [chain for chain in new_chains if chain in filtered_all_chains] # can do this faster with index math
+
+    return filtered_new_chains, filtered_all_chains
+
+
+def chains_to_str(chains):
+    text = "["
+    for chain in chains:
+        name = ""
+        for checkin in chain[0]:
+            name += str(checkin)
+        name += "*"
+
+        if text != "[":
+            text += ", "
+        text += name
+    text += "]"
+    return text
+
+
+def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin_periods, chain_length, do_filter, distributions):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
     chains_list = []
-    all_values = {}
-    all_policies = {}
-
     all_chains = []
 
     chains = []
@@ -1771,9 +1794,10 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
         chain = ([k], values, [policy], (hitting_time, hitting_checkins))
         chains.append(chain)
         all_chains.append(chain)
-        all_values[tuple([k])] = values
-        all_policies[tuple([k])] = policy
     chains_list.append(chains)
+
+    print("--------")
+    print("Current chains: " + chains_to_str(all_chains))
 
     for i in range(1, chain_length):
         previous_chains = chains_list[i - 1]
@@ -1803,36 +1827,36 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
                 prev_hitting_checkins = tail[3][1]
                 hitting_time = extendMarkovHittingTime(mdp, markov, target_state, k, prev_hitting_time)
                 hitting_checkins = extendMarkovHittingTime(mdp, markov, target_state, 1, prev_hitting_checkins)
-
-                all_values[tuple(chain)] = new_values
-                all_policies[tuple(chain)] = policy
                 
                 new_chain = (chain, new_values, policies, (hitting_time, hitting_checkins))
                 chains.append(new_chain)
                 all_chains.append(new_chain)
+        
+        if do_filter:
+            filtered_chains, filtered_all_chains = step_filter(chains, all_chains, distributions)
+            #print("Filtered from",len(chains),"to",len(filtered_chains),"new chains and",len(all_chains),"to",len(filtered_all_chains),"total.")
+            og_len = len(all_chains) - len(chains)
+            new_len_min_add = len(filtered_all_chains) - len(filtered_chains)
+            removed = og_len - new_len_min_add
+            
+            print("Considering new chains: " + chains_to_str(chains))
+            print("Added",len(filtered_chains),"out of",len(chains),"new chains and removed",removed,"out of",og_len,"previous chains.")
+            all_chains = filtered_all_chains
 
-        chains_list.append(chains)
+            chains_list.append(filtered_chains)
+        else:
+            chains_list.append(chains)
+
+        print("--------")
+        print("Current chains: " + chains_to_str(all_chains))
 
     start_state_index = mdp.states.index(start_state)
 
-    full_chains = chains_list[-1]
-    # chains = full_chains
     chains = all_chains
     chains = sorted(chains, key=lambda chain: chain[1][start_state], reverse=True)
 
     costs = []
     start_state_costs = []
-
-    distributions = []
-    
-    distStart = []
-    for i in range(len(mdp.states)):
-        distStart.append(1 if i == start_state_index else 0)
-    distributions.append(distStart)
-    
-    # distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
-    # distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
-    # distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
 
     for chain in chains:
         name = ""
@@ -1851,20 +1875,6 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
 
         # pareto_values = getAllStateParetoValues(mdp, chain)
         pareto_values = getStateDistributionParetoValues(mdp, chain, distributions)
-
-        #execution_cost = execution_cost_factor * hitting_time
-        #checkin_cost = 0
-        
-        # t = hitting_checkins
-        # i = 0
-        # while t > 0:
-        #     k = chain[0][i]
-        #     factor = 1 if t >= 1 else t
-        #     checkin_cost += checkin_costs[k] * factor
-        #     t -= 1
-        #     i += 1
-        #     if i >= len(chain[0]):
-        #         i = len(chain[0]) - 1
 
         # print(name + ":", values[start_state], "| Hitting time:", hitting_time, "| Hitting checkins:", hitting_checkins, "| Execution cost:", execution_cost, "| Checkin cost:", checkin_cost)
         print(name + ":", values[start_state], "| Execution cost:", execution_cost, "| Checkin cost:", checkin_cost)
@@ -1905,10 +1915,12 @@ def scatter(ax, chains, doLabel, color, lcolor):
             ax.annotate(labels[i], (x[i], y[i]), color=lcolor)
 
 def calculateParetoFront(chains):
-    # costs = np.array([[chain[1], chain[2]] for chain in chains])
-    costs = np.array([chain[1] for chain in chains])
+    return calculateParetoFrontC([chain[1] for chain in chains])
 
-    is_efficient = np.ones(len(chains), dtype = bool)
+def calculateParetoFrontC(costs):
+    costs = np.array(costs)
+
+    is_efficient = np.ones(len(costs), dtype = bool)
     for i, c in enumerate(costs):
         is_efficient[i] = np.all(np.any(costs[:i]>c, axis=1)) and np.all(np.any(costs[i+1:]>c, axis=1))
 
@@ -1985,13 +1997,34 @@ for y in range(len(grid)):
             target_state = state
             break
 
+c_start = time.time()
+
+start_state_index = mdp.states.index(start_state)
+
+distributions = []
+    
+distStart = []
+for i in range(len(mdp.states)):
+    distStart.append(1 if i == start_state_index else 0)
+distributions.append(distStart)
+
+distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
+# distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
+# distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
+
 costs, start_state_costs = calculateChainValues(grid, mdp, discount, start_state, target_state, 
     checkin_periods=[2, 3, 4], 
     # execution_cost_factor=1, 
     # checkin_costs={2: 10, 3: 5, 4: 2}, 
-    chain_length=5)
-start_state_index = mdp.states.index(start_state)
-is_efficient = calculateParetoFront(costs)
+    chain_length=4,
+    do_filter = True, 
+    distributions=distributions)
+
+is_efficient = calculateParetoFront(start_state_costs)
+
+c_end = time.time()
+print("Chain evaluation time:", c_end - c_start)
+
 drawChainsParetoFront(start_state_costs, is_efficient)
 
 # runCheckinSteps(1, 20)
