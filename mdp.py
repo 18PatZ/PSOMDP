@@ -1830,8 +1830,8 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
         distStart.append(1 if i == start_state_index else 0)
     distributions.append(distStart)
     
-    distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
-    distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
+    # distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
+    # distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
     # distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
 
     for chain in chains:
@@ -1924,6 +1924,10 @@ def drawChainsParetoFront(chains, is_efficient):
             chains_filtered.append(chains[i])
         else:
             chains_dominated.append(chains[i])
+
+    print("Non-dominated chains:")
+    for chain in chains_filtered:
+        print("  ", chain[0])
     # x_f = [chain[1] for chain in chains_filtered]
     # y_f = [chain[2] for chain in chains_filtered]
     # labels_f = [chain[0] for chain in chains_filtered]
@@ -1985,7 +1989,7 @@ costs, start_state_costs = calculateChainValues(grid, mdp, discount, start_state
     checkin_periods=[2, 3, 4], 
     # execution_cost_factor=1, 
     # checkin_costs={2: 10, 3: 5, 4: 2}, 
-    chain_length=4)
+    chain_length=5)
 start_state_index = mdp.states.index(start_state)
 is_efficient = calculateParetoFront(costs)
 drawChainsParetoFront(start_state_costs, is_efficient)
