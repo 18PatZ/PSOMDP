@@ -1147,6 +1147,64 @@ def splitterGrid(rows = 8, discount = math.sqrt(0.9)):
     return grid, mdp, discount, start_state
 
 
+def splitterGrid2(rows = 8, discount = math.sqrt(0.9)):
+    goalActionReward = 10000
+    noopReward = 0#-1
+    wallPenalty = -50000
+    movePenalty = -1
+
+    moveProb = 0.9
+    # discount = math.sqrt(0.9)
+
+    grid = []
+    
+    # rows = 8
+    p1 = 2
+    p2 = 3
+
+    maxN = math.floor(rows / 3)#3
+    nL = 0
+    nR = 0
+
+    grid.append([0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0])
+
+    j = 1
+    for i in range(1, rows):
+        row = None
+        if nL < maxN and j % p1 == 1:#(rows-i) % p1 == 1:
+            nL += 1
+            row = [0, 1, 0, 1, 0, 1]
+
+            if nL == 2:
+                p1 = p2
+                j = 1
+        else:
+            row = [0, 0, 0, 0, 0, 0]
+
+        j += 1
+
+        # row.append(2 if i == 0 else 1)
+        row.append(1)
+
+        if nR < maxN and i % p2 == 1:#(rows-i) % p2 == 1:
+            nR += 1
+            row += [1, 0, 1, 0, 1, 0]
+        else:
+            row += [0, 0, 0, 0, 0, 0]
+        # grid.append(row)
+        grid.insert(1, row)
+    
+    grid.append([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+    start_state = (6, rows+4-1)
+
+    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
+    return grid, mdp, discount, start_state
+
+
 def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False, bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None):
     policy = None
     values = None
@@ -1783,6 +1841,13 @@ def step_filter(new_chains, all_chains, distributions, margin, bounding_box):
     return filtered_new_chains, filtered_all_chains
 
 
+def chain_to_str(chain):
+    name = ""
+    for checkin in chain[0]:
+        name += str(checkin)
+    name += "*"
+    return name
+
 def chains_to_str(chains):
     text = "["
     for chain in chains:
@@ -1834,6 +1899,43 @@ def drawParetoStep(chains, initialDistribution, TRUTH, TRUTH_COSTS, plotName, ti
     is_efficient = calculateParetoFront(start_state_costs)
     drawChainsParetoFront(start_state_costs, is_efficient, TRUTH, TRUTH_COSTS, plotName, title, bounding_box, prints=False)
 
+def createChainTail(grid, mdp, discount, target_state, compMDPs, k):
+    discount_t = pow(discount, k)
+    compMDP = compMDPs[k]
+
+    policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
+    
+    markov = markovProbsFromPolicy(compMDP, policy)
+    hitting_time = expectedMarkovHittingTime(mdp, markov, target_state, k)
+    hitting_checkins = expectedMarkovHittingTime(mdp, markov, target_state, 1)
+
+    chain = ([k], values, [policy], (hitting_time, hitting_checkins))
+    return chain
+
+def extendChain(compMDPs, chain, k):
+    compMDP = compMDPs[k]
+
+    chain_checkins = list(chain[0])
+    chain_checkins.insert(0, k)
+
+    tail_values = chain[1]
+    discount_t = pow(discount, k)
+
+    new_values = runOneValueIterationPass(tail_values, discount_t, compMDP)
+
+    policies = list(chain[2])
+    policy = policyFromValues(compMDP, tail_values)
+    policies.insert(0, policy)
+
+    markov = markovProbsFromPolicy(compMDP, policy)
+    prev_hitting_time = chain[3][0]
+    prev_hitting_checkins = chain[3][1]
+    hitting_time = extendMarkovHittingTime(mdp, markov, target_state, k, prev_hitting_time)
+    hitting_checkins = extendMarkovHittingTime(mdp, markov, target_state, 1, prev_hitting_checkins)
+    
+    new_chain = (chain_checkins, new_values, policies, (hitting_time, hitting_checkins))
+    return new_chain
+
 def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
@@ -1844,16 +1946,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
     chains = []
     l = 1
     for k in checkin_periods:
-        discount_t = pow(discount, k)
-        compMDP = compMDPs[k]
-
-        policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
-        
-        markov = markovProbsFromPolicy(compMDP, policy)
-        hitting_time = expectedMarkovHittingTime(mdp, markov, target_state, k)
-        hitting_checkins = expectedMarkovHittingTime(mdp, markov, target_state, 1)
-
-        chain = ([k], values, [policy], (hitting_time, hitting_checkins))
+        chain = createChainTail(grid, mdp, discount, target_state, compMDPs, k)
         chains.append(chain)
         all_chains.append(chain)
 
@@ -1864,7 +1957,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
 
     print("--------")
     print(len(all_chains),"current chains")
-    # print("Current chains: " + chains_to_str(all_chains))
+    print("Current chains: " + chains_to_str(all_chains))
 
     for i in range(1, chain_length):
         l += 1
@@ -1875,28 +1968,8 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
             for k in checkin_periods:
                 if i == 1 and k == tail[0][0]:
                     continue # don't duplicate recurring tail value (e.g. 23* and 233*)
-
-                compMDP = compMDPs[k]
-
-                chain = list(tail[0])
-                chain.insert(0, k)
-
-                tail_values = tail[1]
-                discount_t = pow(discount, k)
-
-                new_values = runOneValueIterationPass(tail_values, discount_t, compMDP)
-
-                policies = list(tail[2])
-                policy = policyFromValues(compMDP, tail_values)
-                policies.insert(0, policy)
-
-                markov = markovProbsFromPolicy(compMDP, policy)
-                prev_hitting_time = tail[3][0]
-                prev_hitting_checkins = tail[3][1]
-                hitting_time = extendMarkovHittingTime(mdp, markov, target_state, k, prev_hitting_time)
-                hitting_checkins = extendMarkovHittingTime(mdp, markov, target_state, 1, prev_hitting_checkins)
                 
-                new_chain = (chain, new_values, policies, (hitting_time, hitting_checkins))
+                new_chain = extendChain(compMDPs, tail, k)
                 chains.append(new_chain)
                 all_chains.append(new_chain)
         
@@ -1907,7 +1980,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
             new_len_min_add = len(filtered_all_chains) - len(filtered_chains)
             removed = og_len - new_len_min_add
             
-            # print("Considering new chains: " + chains_to_str(chains))
+            print("Considering new chains: " + chains_to_str(chains))
             print("Added",len(filtered_chains),"out of",len(chains),"new chains and removed",removed,"out of",og_len,"previous chains.")
             all_chains = filtered_all_chains
 
@@ -1920,7 +1993,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
 
         print("--------")
         print(len(all_chains),"current chains")
-        # print("Current chains: " + chains_to_str(all_chains))
+        print("Current chains: " + chains_to_str(all_chains))
 
     start_state_index = mdp.states.index(start_state)
 
@@ -2243,6 +2316,146 @@ def drawCompares(data):
     plt.show()
 
 
+
+
+def drawChainPolicy(grid, mdp, discount, start_state, target_state, checkin_periods, chain_checkins, name):
+    all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
+    compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
+
+    i = len(chain_checkins) - 1
+    chain = createChainTail(grid, mdp, discount, target_state, compMDPs, chain_checkins[i])
+    while i >= 0:
+        chain = extendChain(compMDPs, chain, chain_checkins[i])
+        i -= 1
+    
+    #chain = ([k], values, [policy], (hitting_time, hitting_checkins))
+    policies = chain[2]
+    values = chain[1]
+    sequence = chain[0]
+
+    max_value = None
+    min_value = None
+
+    if len(values) > 0:
+        min_value = min(values.values())
+        max_value = max(values.values())
+
+    G = nx.MultiDiGraph()
+
+    for state in mdp.states:
+        G.add_node(state)
+
+    #'''
+    for y in range(len(grid)):
+        for x in range(len(grid[y])):
+            state = (x, y)
+            state_type = grid[y][x]
+
+            if state_type == TYPE_WALL:
+                G.add_node(state)
+    #'''
+
+    current_state = start_state
+    stage = 0
+    while True:
+        if current_state == target_state:
+            break
+
+        policy = policies[stage]
+        action = policy[current_state]
+        k = sequence[stage]
+        compMDP = compMDPs[k]
+
+        maxProb = -1
+        maxProbEnd = None
+        
+        for end in compMDP.transitions[current_state][action].keys():
+            probability = compMDP.transitions[current_state][action][end]
+
+            if probability > maxProb:
+                maxProb = probability
+                maxProbEnd = end
+        
+        if maxProbEnd is not None:
+            end = maxProbEnd
+            probability = maxProb
+            color = "blue"
+            G.add_edge(current_state, end, prob=probability, label=f"{action}: " + "{:.2f}".format(probability), color=color, fontcolor=color)
+            
+            current_state = end
+            if stage < len(sequence) - 1:
+                stage += 1
+        else:
+            break
+
+    # Build plot
+    fig, ax = plt.subplots(figsize=(8, 8))
+    
+    layout = {}
+
+    ax.clear()
+    labels = {}
+    edge_labels = {}
+    color_map = []
+
+    # G.graph['edge'] = {'arrowsize': '1.0', 'fontsize':'10', 'penwidth': '5'}
+    # G.graph['graph'] = {'scale': '3', 'splines': 'true'}
+    G.graph['edge'] = {'arrowsize': '1.0', 'fontsize':'10', 'penwidth': '5'}
+    G.graph['graph'] = {'scale': '3', 'splines': 'true'}
+
+    A = to_agraph(G)
+
+    A.node_attr['style']='filled'
+
+    for node in G.nodes():
+        labels[node] = f"{stateToStr(node)}"
+
+        layout[node] = (node[0], -node[1])
+
+        state_type = grid[node[1]][node[0]]
+
+        n = A.get_node(node)
+        n.attr['color'] = fourColor(node)
+
+        if state_type != TYPE_WALL:
+            n.attr['xlabel'] = "{:.4f}".format(values[node])
+
+        color = None
+        if state_type == TYPE_WALL:
+            color = "#6a0dad"
+        elif min_value is None and state_type == TYPE_GOAL:
+            color = "#00FFFF"
+        elif min_value is None:
+            color = "#FFA500"
+        else:
+            value = values[node]
+            frac = (value - min_value) / (max_value - min_value)
+            hue = frac * 250.0 / 360.0 # red 0, blue 1
+
+            col = colorsys.hsv_to_rgb(hue, 1, 1)
+            col = (int(col[0] * 255), int(col[1] * 255), int(col[2] * 255))
+            color = '#%02x%02x%02x' % col
+
+        n.attr['fillcolor'] = color
+
+        color_map.append(color)
+
+    for s, e, d in G.edges(data=True):
+        edge_labels[(s, e)] = "{:.2f}".format(d['prob'])
+
+    # Set the title
+    #ax.set_title("MDP")
+
+    #plt.show()
+    m = 0.7#1.5
+    for k,v in layout.items():
+        A.get_node(k).attr['pos']='{},{}!'.format(v[0]*m,v[1]*m)
+
+    #A.layout('dot')
+    A.layout(prog='neato')
+    A.draw(name + '.png')#, prog="neato")
+
+
 def runChains(grid, mdp, discount, start_state, target_state, 
     checkin_periods, chain_length, do_filter, margin, distName, startName, distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate):
 
@@ -2299,7 +2512,9 @@ def runChains(grid, mdp, discount, start_state, target_state,
 
 # grid, mdp, discount, start_state = paper2An(3)#splitterGrid(rows = 50, discount=0.99)#paper2An(3)#, 0.9999)
 
-grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, cadence2=3)
+# grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, cadence2=3)
+grid, mdp, discount, start_state = splitterGrid2(rows = 12)
+
 
 # end = time.time()
 # print("MDP creation time:", end - start)
@@ -2328,6 +2543,27 @@ for y in range(len(grid)):
             break
 
 
+if True:
+    # start_state = (8, 11)
+    # drawChainPolicy(grid, mdp, discount, start_state, target_state, 
+    #     checkin_periods=[1, 2, 3, 4], 
+    #     chain_checkins=[2,2,1,3], 
+    #     name="output/policy-chain-splitter2-2213*")
+
+    # front = ["21*", "221*", "2221*", "22221*", "22112*", "2212*", "11213*", "2213*", "23*", "23334*", "33334*", "43334*", "3334*", "4334*", "434*", "4434*", "44434*"]
+    front = ["222223*"]
+    for c in front:
+        checkins = []
+        for l in c[:-1]:
+            checkins.append(int(l))
+        drawChainPolicy(grid, mdp, discount, start_state, target_state, 
+            checkin_periods=[1, 2, 3, 4], 
+            chain_checkins=checkins, 
+            name="output/policy-chain-splitter3-" + c)
+    
+    exit()
+    
+
 TRUTH_234 = [('223*', [-1471895.5491260004, 10.36207210840559]), ('23*', [-1466111.360834025, 10.272072943363703]), ('2343*', [-1459989.7576398463, 10.188573289663607]), ('2234*', [-1442990.0823133066, 9.440067985664028]), ('2334*', [-1437776.5013845253, 9.358111758033958]), ('234*', [-1432535.7535183069, 9.268943242061733]), ('24*', [-1425204.691571236, 9.26894324206173])]
 TRUTH_C4L4 = [('1121*', [-1490162.871172391, 25.553586157256976]), ('221*', [-1490162.8711723909, 24.553586157256976]), ('2221*', [-1489466.9071525347, 23.64358615725698]), ('2231*', [-1488603.1401359926, 22.738537023683413]), ('2331*', [-1482744.2415537834, 22.468598326365132]), ('2341*', [-1475378.7537851958, 22.370432645136855]), ('2113*', [-1471922.145938075, 11.362072108405588]), ('223*', [-1471895.5491260004, 10.36207210840559]), ('23*', [-1466111.360834025, 10.272072943363703]), ('2343*', [-1459989.7576398463, 10.188573289663607]), ('2234*', [-1442990.0823133066, 9.440067985664028]), ('2334*', [-1437776.5013845253, 9.358111758033958]), ('234*', [-1432535.7535183069, 9.268943242061733]), ('24*', [-1425204.691571236, 9.26894324206173])]
 TRUTH_12345 = [('1121*', [-1490162.871172391, 25.553586157256976]), ('221*', [-1490162.8711723909, 24.553586157256976]), ('2221*', [-1489466.9071525347, 23.64358615725698]), ('2231*', [-1488603.1401359926, 22.738537023683413]), ('2331*', [-1482744.2415537834, 22.468598326365132]), ('2341*', [-1475378.7537851958, 22.370432645136855]), ('2113*', [-1471922.145938075, 11.362072108405588]), ('223*', [-1471895.5491260004, 10.36207210840559]), ('23*', [-1466111.360834025, 10.272072943363703]), ('2343*', [-1459989.7576398463, 10.188573289663607]), ('2353*', [-1452372.0628502036, 10.188552523383924]), ('2234*', [-1442990.0823133066, 9.440067985664028]), ('2334*', [-1437776.5013845253, 9.358111758033958]), ('234*', [-1432535.7535183069, 9.268943242061733]), ('24*', [-1425204.691571236, 9.26894324206173]), ('2354*', [-1425055.5828949779, 9.268942257572757]), ('2345*', [-1391849.9571809277, 9.250849926302044]), ('235*', [-1384573.7339997415, 9.250848891530724]), ('5*', [-1349923.035067944, 9.250848891530723])]
@@ -2339,7 +2575,9 @@ TRUTH_COSTS_C5L5 = [('1121*', [-1490162.871172391, 25.553586157256976]), ('221*'
 
 # bounding_box = np.array([[-1.5e6, -1.38e6], [0, 30]])
 # bounding_box = np.array([[-1.56e6, -1.32e6], [0, 30]])
-bounding_box = np.array([[-1.53e6, -1.38e6], [0, 30]])
+# bounding_box = np.array([[-1.53e6, -1.38e6], [0, 30]])
+# bounding_box = np.array([[-32000, -17000], [0, 30]])
+bounding_box = np.array([[-57000, -38000], [0, 30]])
 
 compares = [('Truth', [74.15495896339417, 0]), ('Dirac 0', [24.367187023162842, 0.3009274397414072]), ('Dirac 0.1', [25.151644229888916, 0.26517950151114317]), ('Dirac 0.2', [49.12092685699463, 0.16426632211119754]), ('Gaussian 0', [38.717007875442505, 0.14972084714714468]), ('Gaussian 0.05', [44.45709490776062, 0.0006497689800423529]), ('Gaussian 0.1', [59.4831109046936, 0]), ('Uniform 0', [31.752576112747192, 0.15037592784433365]), ('Uniform 0.05', [46.60546684265137, 0.15037592784433365]), ('Uniform 0.1', [39.49303913116455, 0.0])]
 
@@ -2362,17 +2600,17 @@ distributions.append(uniform(mdp))
 # distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
 # distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
 
-# initialDistribution = dirac(mdp, start_state)
+initialDistribution = dirac(mdp, start_state)
 # initialDistribution = dirac(mdp, (start_state[0]-1, start_state[1]))
 # initialDistribution = dirac(mdp, (start_state[0]+1, start_state[1]))
 # initialDistribution = dirac(mdp, (start_state[0], start_state[1]-1))
 # initialDistribution = dirac(mdp, (start_state[0], start_state[1]+1))
-initialDistribution = \
-    0.5 * np.array(dirac(mdp, start_state)) + \
-    0.125 * np.array(dirac(mdp, (start_state[0]-1, start_state[1]))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0]+1, start_state[1]))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]-1))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]+1)))
+# initialDistribution = \
+#     0.5 * np.array(dirac(mdp, start_state)) + \
+#     0.125 * np.array(dirac(mdp, (start_state[0]-1, start_state[1]))) + \
+#     0.125 * np.array(dirac(mdp, (start_state[0]+1, start_state[1]))) + \
+#     0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]-1))) + \
+#     0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]+1)))
 
 # margins = [0, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05]
 # margins = np.arange(0, 0.1001, 0.005)
@@ -2390,11 +2628,11 @@ for margin in margins:
         running_time, error = runChains(
             grid, mdp, discount, start_state, target_state,
             checkin_periods=[1, 2, 3, 4],
-            chain_length=4,
+            chain_length=5,
             do_filter = True,
             margin = margin,
             distName = 'uniform',
-            startName = 'Mixed',
+            startName = '',
             distributions = distributions, 
             initialDistribution = initialDistribution,
             bounding_box = bounding_box, 
