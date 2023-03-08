@@ -1696,7 +1696,7 @@ def policyFromValues(mdp, values, restricted_action_set = None):
         
         policy[state] = best_action
     return policy
-
+    
 
 def extendMarkovHittingTime(mdp, transition_matrix, target_state, checkin_period, prev_hitting_times):
     H = []
@@ -1825,6 +1825,17 @@ def uniform(mdp):
     
     return dist
 
+def chainPoints(chain):
+    values = chain[1][0][0]
+    hitting_checkins = chain[1][0][1]
+    
+    values_greedy = chain[1][1][0]
+    hitting_checkins_greedy = chain[1][1][1]
+    
+    # return [[values, hitting_checkins]]
+    return [[values, hitting_checkins], [values, hitting_checkins_greedy]]
+    # return [[values, hitting_checkins], [values, hitting_checkins_greedy], [values_greedy, hitting_checkins_greedy]]
+
 def step_filter(new_chains, all_chains, distributions, margin, bounding_box):
 
     costs = []
@@ -1835,8 +1846,10 @@ def step_filter(new_chains, all_chains, distributions, margin, bounding_box):
 
         idx = []
 
-        for j in range(len(chain[1])):
-            point = chain[1][j]
+        points = chainPoints(chain)
+
+        for j in range(len(points)):
+            point = points[j]
             cost = getStateDistributionParetoValues(mdp, point, distributions)
             idx.append(len(costs))
             costs.append(cost)
@@ -1911,14 +1924,19 @@ def chains_to_str(chains):
 
 def getStartParetoValues(chains, initialDistribution):
     costs = []
+    indices = []
     for chain in chains:
         name = ""
         for checkin in chain[0]:
             name += str(checkin)
         name += "*"
 
-        points = chain[1]
-        for point in points:
+        #points = chain[1]
+        points = chainPoints(chain)
+        idx = []
+        nameSuff = [' $\pi^\\ast$', ' $\pi^c$']
+        for p in range(len(points)):
+            point = points[p]
             checkin_cost = 0
             execution_cost = 0
 
@@ -1932,8 +1950,10 @@ def getStartParetoValues(chains, initialDistribution):
                 checkin_cost += initialDistribution[i] * hitting_checkins
                 execution_cost += initialDistribution[i] * (- values[state])
 
-            costs.append([name, [execution_cost, checkin_cost]])
-    return costs
+            idx.append(len(costs))
+            costs.append([name, [execution_cost, checkin_cost], nameSuff[p]])
+        indices.append([name, idx])
+    return costs, indices
     
 
 def drawParetoStep(chains, initialDistribution, TRUTH, TRUTH_COSTS, plotName, title, stepLen, bounding_box):
@@ -1941,11 +1961,11 @@ def drawParetoStep(chains, initialDistribution, TRUTH, TRUTH_COSTS, plotName, ti
     plotName += "-step" + str(stepLen)
     title += " Length " + str(stepLen)
 
-    start_state_costs = getStartParetoValues(chains, initialDistribution)
+    start_state_costs, indices = getStartParetoValues(chains, initialDistribution)
         
     is_efficient = calculateParetoFront(start_state_costs)
     saveDataChains(start_state_costs, is_efficient, "pareto-" + plotName)
-    drawChainsParetoFront(start_state_costs, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
+    drawChainsParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
 
 def createChainTail(grid, mdp, discount, target_state, compMDPs, greedyCompMDPs, k):
     discount_t = pow(discount, k)
@@ -1999,7 +2019,7 @@ def extendChain(compMDPs, greedyCompMDPs, chain, k):
     policy_greedy = policyFromValues(greedyMDP, new_values_greedy)
     
     prev_hitting_greedy = tail_values[1][1]
-    new_hitting_greedy = extendMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy), target_state, 1, prev_hitting_greedy)
+    new_hitting_greedy = extendMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1, prev_hitting_greedy)
     
     new_chain = [chain_checkins, [[new_values, new_hitting], [new_values_greedy, new_hitting_greedy]]]
     return new_chain
@@ -2072,8 +2092,8 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
     chains = all_chains
     # chains = sorted(chains, key=lambda chain: chain[1][start_state], reverse=True)
 
-    start_state_costs = getStartParetoValues(chains, initialDistribution)
-    return start_state_costs
+    start_state_costs, indices = getStartParetoValues(chains, initialDistribution)
+    return start_state_costs, indices
 
     # costs = []
     # start_state_costs = []
@@ -2169,7 +2189,7 @@ def lines(ax, chains, color):
     
     ax.plot(x, y, c=color)
 
-def manhattan_lines(ax, chains, color, bounding_box, x_offset=0, x_scale=1):
+def manhattan_lines(ax, chains, color, bounding_box, x_offset=0, x_scale=1, linestyle=None):
     x = []
     y = []
 
@@ -2198,7 +2218,10 @@ def manhattan_lines(ax, chains, color, bounding_box, x_offset=0, x_scale=1):
         x.append((xmax + x_offset) * x_scale)
         y.append(point[1])
     
-    ax.plot(x, y, c=color)
+    if linestyle is None:
+        ax.plot(x, y, c=color)
+    else:
+        ax.plot(x, y, c=color, linestyle=linestyle)
 
 def calculateParetoFront(chains):
     return calculateParetoFrontC([chain[1] for chain in chains])
@@ -2369,7 +2392,7 @@ def loadDataChains(filename):
         obj = json.loads(jsonStr)
         return (obj['Chains'], obj['Efficient'])
 
-def drawChainsParetoFront(chains, is_efficient, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
+def drawChainsParetoFront(chains, indices, is_efficient, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
     plt.style.use('seaborn-whitegrid')
 
     arrows = True
@@ -2392,6 +2415,17 @@ def drawChainsParetoFront(chains, is_efficient, true_front, true_costs, name, ti
             chains_filtered.append(chains[i])
         else:
             chains_dominated.append(chains[i])
+
+    is_efficient_chains = []
+    for i in range(len(indices)):
+        idx = indices[i][1]
+
+        efficient = False
+        for j in idx:
+            if is_efficient[j]:
+                efficient = True
+                break
+        is_efficient_chains.append(efficient)
 
     chains_filtered.sort(key = lambda chain: chain[1][0])
 
@@ -2420,10 +2454,22 @@ def drawChainsParetoFront(chains, is_efficient, true_front, true_costs, name, ti
     if true_front is not None:
         manhattan_lines(ax, true_front, color="green", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
         scatter(ax, true_front, doLabel=False, color="green", lcolor="green", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+
     
     # scatter(ax, chains_dominated, doLabel=True, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale)
     scatter(ax, chains_dominated, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+
+
+    for i in range(len(is_efficient_chains)):
+        if is_efficient_chains[i]:
+            points = []
+            for j in indices[i][1]:
+                points.append(chains[j])
+            manhattan_lines(ax, points, color="red", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, linestyle="dashed")
+            scatter(ax, points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+
     
+
     manhattan_lines(ax, chains_filtered, color="red", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
     scatter(ax, chains_filtered, doLabel=True, color="red", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
     
@@ -2687,7 +2733,7 @@ def runChains(grid, mdp, discount, start_state, target_state,
 
     c_start = time.time()
 
-    start_state_costs = calculateChainValues(grid, mdp, discount, start_state, target_state, 
+    start_state_costs, indices = calculateChainValues(grid, mdp, discount, start_state, target_state, 
         checkin_periods=checkin_periods, 
         # execution_cost_factor=1, 
         # checkin_costs={2: 10, 3: 5, 4: 2}, 
@@ -2719,7 +2765,7 @@ def runChains(grid, mdp, discount, start_state, target_state,
     print("Error from true Pareto:",error)
 
     saveDataChains(start_state_costs, is_efficient, "pareto-" + name)
-    drawChainsParetoFront(start_state_costs, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + name, title, bounding_box, prints=True)
+    drawChainsParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + name, title, bounding_box, prints=True)
 
     print("All costs:",start_state_costs)
 
