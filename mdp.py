@@ -1324,7 +1324,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
     #     for end_state in compMDP.transitions[s][action].keys():
     #         print(s,action,"->",end_state,"is",compMDP.transitions[s][action][end_state])
 
-    return values[start_state], elapsed
+    return values[start_state], policy, elapsed, compMDP
 
 
 def runFig2Ratio(wallMin, wallMax, increment = 1, _discount = math.sqrt(0.99)):
@@ -1333,8 +1333,8 @@ def runFig2Ratio(wallMin, wallMax, increment = 1, _discount = math.sqrt(0.99)):
         grid, mdp, discount, start_state = paper2An(numWalls, _discount)
 
         pref = "paperFig2-" + str(numWalls) + "w-"
-        value2, elapsed2 = run(grid, mdp, discount, start_state, checkin_period=2, doBranchAndBound=False, doLinearProg=True, drawPolicy=False, drawIterations=False, outputPrefix=pref)
-        value3, elapsed3 = run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=False, doLinearProg=True, drawPolicy=False, drawIterations=False, outputPrefix=pref)
+        value2, _, elapsed2, _ = run(grid, mdp, discount, start_state, checkin_period=2, doBranchAndBound=False, doLinearProg=True, drawPolicy=False, drawIterations=False, outputPrefix=pref)
+        value3, _, elapsed3, _ = run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=False, doLinearProg=True, drawPolicy=False, drawIterations=False, outputPrefix=pref)
 
         r = (numWalls, value2, value3)
         results.append(r)
@@ -1359,7 +1359,7 @@ def runCheckinSteps(checkinMin, checkinMax, increment = 1):
         print("\n\n ==== CHECKIN PERIOD " + str(checkin_period)  + " ==== \n\n")
         time = 0
         for i in range(0, 1):
-            value, elapsed = run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+            value, _, elapsed, _ = run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
             time += elapsed
         time /= 1
 
@@ -1772,13 +1772,15 @@ def getStateDistributionParetoValues(mdp, chain, distributions):
         for i in range(len(mdp.states)):
             state = mdp.states[i]
 
-            values = chain[1]
-            hitting = chain[3]
+            # values = chain[1]
+            # hitting = chain[3]
         
-            hitting_time = hitting[0][i]
-            hitting_checkins = hitting[1][i]
+            # hitting_time = hitting[0][i]
+            # hitting_checkins = hitting[1][i]
+            values = chain[0]
+            hitting_checkins = chain[1]
 
-            checkin_cost = hitting_checkins
+            checkin_cost = hitting_checkins[i]
             execution_cost = - values[state]
 
             dist_checkin_cost += distribution[i] * checkin_cost
@@ -1825,20 +1827,60 @@ def uniform(mdp):
 
 def step_filter(new_chains, all_chains, distributions, margin, bounding_box):
 
-    costs = [getStateDistributionParetoValues(mdp, chain, distributions) for chain in all_chains]
-    is_efficient = calculateParetoFrontC(costs)
+    costs = []
+    indices = []
 
-    filtered_all_chains = [all_chains[i] for i in range(len(all_chains)) if is_efficient[i]]
-    front = np.array([costs[i] for i in range(len(all_chains)) if is_efficient[i]])
-    
-    if margin > 0 and len(front) >= 1:
-        for i in range(len(all_chains)):
-            if not is_efficient[i]:
-                chain = all_chains[i]
-                cost = np.array(costs[i])
+    for i in range(len(all_chains)):
+        chain = all_chains[i]
+
+        idx = []
+
+        for j in range(len(chain[1])):
+            point = chain[1][j]
+            cost = getStateDistributionParetoValues(mdp, point, distributions)
+            idx.append(len(costs))
+            costs.append(cost)
+
+        indices.append(idx)
+        
+    #costs = [getStateDistributionParetoValues(mdp, chain, distributions) for chain in all_chains]
+    is_efficient = calculateParetoFrontC(costs)
+    is_efficient_chains = []
+
+    front = np.array([costs[i] for i in range(len(costs)) if is_efficient[i]])
+
+    #filtered_all_chains = [all_chains[i] for i in range(len(all_chains)) if is_efficient[i]]
+    filtered_all_chains = []
+    for i in range(len(all_chains)):
+        chain = all_chains[i]
+
+        efficient = False
+
+        for idx in indices[i]:
+            if is_efficient[idx]:
+                efficient = True
+                filtered_all_chains.append(chain)
+                break
+        is_efficient_chains.append(efficient)
+
+        if not efficient and margin > 0:
+            for idx in indices[i]:
+                cost = np.array(costs[idx])
                 dist = calculateDistance(cost, front, bounding_box)
                 if dist <= margin:
                     filtered_all_chains.append(chain)
+                    break
+
+    # front = np.array([costs[i] for i in range(len(all_chains)) if is_efficient[i]])
+    
+    # if margin > 0 and len(front) >= 1:
+    #     for i in range(len(all_chains)):
+    #         if not is_efficient[i]:
+    #             chain = all_chains[i]
+    #             cost = np.array(costs[i])
+    #             dist = calculateDistance(cost, front, bounding_box)
+    #             if dist <= margin:
+    #                 filtered_all_chains.append(chain)
 
     filtered_new_chains = [chain for chain in new_chains if chain in filtered_all_chains] # can do this faster with index math
 
@@ -1875,21 +1917,22 @@ def getStartParetoValues(chains, initialDistribution):
             name += str(checkin)
         name += "*"
 
-        checkin_cost = 0
-        execution_cost = 0
+        points = chain[1]
+        for point in points:
+            checkin_cost = 0
+            execution_cost = 0
 
-        values = chain[1]
-        hitting = chain[3]
+            values = point[0]
+            hitting = point[1]
 
-        for i in range(len(mdp.states)):
-            state = mdp.states[i]
+            for i in range(len(mdp.states)):
+                state = mdp.states[i]
+                hitting_checkins = hitting[i]
 
-            hitting_checkins = hitting[1][i]
+                checkin_cost += initialDistribution[i] * hitting_checkins
+                execution_cost += initialDistribution[i] * (- values[state])
 
-            checkin_cost += initialDistribution[i] * hitting_checkins
-            execution_cost += initialDistribution[i] * (- values[state])
-
-        costs.append([name, [execution_cost, checkin_cost]])
+            costs.append([name, [execution_cost, checkin_cost]])
     return costs
     
 
@@ -1904,21 +1947,26 @@ def drawParetoStep(chains, initialDistribution, TRUTH, TRUTH_COSTS, plotName, ti
     saveDataChains(start_state_costs, is_efficient, "pareto-" + plotName)
     drawChainsParetoFront(start_state_costs, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
 
-def createChainTail(grid, mdp, discount, target_state, compMDPs, k):
+def createChainTail(grid, mdp, discount, target_state, compMDPs, greedyCompMDPs, k):
     discount_t = pow(discount, k)
     compMDP = compMDPs[k]
+    greedyMDP = greedyCompMDPs[k]
 
     policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
+    policy_greedy, values_greedy = linearProgrammingSolve(grid, greedyMDP, discount_t)
     
-    markov = markovProbsFromPolicy(compMDP, policy)
-    hitting_time = expectedMarkovHittingTime(mdp, markov, target_state, k)
-    hitting_checkins = expectedMarkovHittingTime(mdp, markov, target_state, 1)
+    #hitting_time = expectedMarkovHittingTime(mdp, markov, target_state, k)
+    hitting_checkins = expectedMarkovHittingTime(mdp, markovProbsFromPolicy(compMDP, policy), target_state, 1)
 
-    chain = [[k], values, [policy], (hitting_time, hitting_checkins)]
+    hitting_checkins_greedy = expectedMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1)
+
+    #chain = [[k], values, [policy], (hitting_time, hitting_checkins)]
+    chain = [[k], [[values, hitting_checkins], [values_greedy, hitting_checkins_greedy]]]
     return chain
 
-def extendChain(compMDPs, chain, k):
+def extendChain(compMDPs, greedyCompMDPs, chain, k):
     compMDP = compMDPs[k]
+    greedyMDP = greedyCompMDPs[k]
 
     chain_checkins = list(chain[0])
     chain_checkins.insert(0, k)
@@ -1926,24 +1974,43 @@ def extendChain(compMDPs, chain, k):
     tail_values = chain[1]
     discount_t = pow(discount, k)
 
-    new_values = runOneValueIterationPass(tail_values, discount_t, compMDP)
+    #new_values = runOneValueIterationPass(tail_values, discount_t, compMDP)
 
-    policies = list(chain[2])
-    policy = policyFromValues(compMDP, tail_values)
-    policies.insert(0, policy)
+    #policies = list(chain[2])
+    #policy = policyFromValues(compMDP, tail_values) # !!!! should be using new values not old yes?
+    #policies.insert(0, policy)
 
-    markov = markovProbsFromPolicy(compMDP, policy)
-    prev_hitting_time = chain[3][0]
-    prev_hitting_checkins = chain[3][1]
-    hitting_time = extendMarkovHittingTime(mdp, markov, target_state, k, prev_hitting_time)
-    hitting_checkins = extendMarkovHittingTime(mdp, markov, target_state, 1, prev_hitting_checkins)
+    # markov = markovProbsFromPolicy(compMDP, policy)
+    # prev_hitting_time = chain[3][0]
+    # prev_hitting_checkins = chain[3][1]
+    # hitting_time = extendMarkovHittingTime(mdp, markov, target_state, k, prev_hitting_time)
+    # hitting_checkins = extendMarkovHittingTime(mdp, markov, target_state, 1, prev_hitting_checkins)
     
-    new_chain = [chain_checkins, new_values, policies, (hitting_time, hitting_checkins)]
+    # new_chain = [chain_checkins, new_values, policies, (hitting_time, hitting_checkins)]
+
+    new_values = runOneValueIterationPass(tail_values[0][0], discount_t, compMDP)
+    policy = policyFromValues(compMDP, new_values)
+    
+    prev_hitting = tail_values[0][1]
+    new_hitting = extendMarkovHittingTime(mdp, markovProbsFromPolicy(compMDP, policy), target_state, 1, prev_hitting)
+
+
+    new_values_greedy = runOneValueIterationPass(tail_values[1][0], discount_t, greedyMDP)
+    policy_greedy = policyFromValues(greedyMDP, new_values_greedy)
+    
+    prev_hitting_greedy = tail_values[1][1]
+    new_hitting_greedy = extendMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy), target_state, 1, prev_hitting_greedy)
+    
+    new_chain = [chain_checkins, [[new_values, new_hitting], [new_values_greedy, new_hitting_greedy]]]
     return new_chain
 
 def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
+
+    greedy_mdp = convertToGreedyMDP(grid, mdp)
+    all_greedy_compMDPs = createCompositeMDPs(greedy_mdp, discount, checkin_periods[-1])
+    greedyCompMDPs = {k: all_greedy_compMDPs[k - 1] for k in checkin_periods}
 
     chains_list = []
     all_chains = []
@@ -1951,7 +2018,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
     chains = []
     l = 1
     for k in checkin_periods:
-        chain = createChainTail(grid, mdp, discount, target_state, compMDPs, k)
+        chain = createChainTail(grid, mdp, discount, target_state, compMDPs, greedyCompMDPs, k)
         chains.append(chain)
         all_chains.append(chain)
 
@@ -1974,7 +2041,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
                 if i == 1 and k == tail[0][0]:
                     continue # don't duplicate recurring tail value (e.g. 23* and 233*)
                 
-                new_chain = extendChain(compMDPs, tail, k)
+                new_chain = extendChain(compMDPs, greedyCompMDPs, tail, k)
                 chains.append(new_chain)
                 all_chains.append(new_chain)
         
@@ -2003,7 +2070,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
     start_state_index = mdp.states.index(start_state)
 
     chains = all_chains
-    chains = sorted(chains, key=lambda chain: chain[1][start_state], reverse=True)
+    # chains = sorted(chains, key=lambda chain: chain[1][start_state], reverse=True)
 
     start_state_costs = getStartParetoValues(chains, initialDistribution)
     return start_state_costs
@@ -2462,10 +2529,14 @@ def drawChainPolicy(grid, mdp, discount, start_state, target_state, checkin_peri
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
+    greedy_mdp = convertToGreedyMDP(grid, mdp)
+    all_greedy_compMDPs = createCompositeMDPs(greedy_mdp, discount, checkin_periods[-1])
+    greedyCompMDPs = {k: all_greedy_compMDPs[k - 1] for k in checkin_periods}
+
     i = len(chain_checkins) - 1
-    chain = createChainTail(grid, mdp, discount, target_state, compMDPs, chain_checkins[i])
+    chain = createChainTail(grid, mdp, discount, target_state, compMDPs, greedyCompMDPs, chain_checkins[i])
     while i >= 0:
-        chain = extendChain(compMDPs, chain, chain_checkins[i])
+        chain = extendChain(compMDPs, greedyCompMDPs, chain, chain_checkins[i])
         i -= 1
     
     #chain = ([k], values, [policy], (hitting_time, hitting_checkins))
@@ -2655,6 +2726,17 @@ def runChains(grid, mdp, discount, start_state, target_state,
     return running_time, error, fractionTrimmed
 
 
+def convertToGreedyMDP(grid, mdp):
+    for state in mdp.rewards:
+        (x, y) = state
+        state_type = grid[y][x]
+
+        if state_type == TYPE_GOAL:
+            continue
+        
+        for action in mdp.rewards[state]:
+            mdp.rewards[state][action] = -1
+    return mdp
 
 # start = time.time()
 
@@ -2667,11 +2749,12 @@ grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, ca
 # end = time.time()
 # print("MDP creation time:", end - start)
 
-# checkin_period = 8
+# checkin_period = 2
+# mdp = convertToGreedyMDP(grid, mdp)
 
 #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
-# run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+# _, policy, _, compMDP = run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
 
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True, 
 #     doSimilarityCluster=True, simClusterParams=(7, 1e-5)) # LP w/ similarity clustering
@@ -2690,6 +2773,9 @@ for y in range(len(grid)):
             target_state = state
             break
 
+# markov = markovProbsFromPolicy(compMDP, policy)
+# hitting_checkins = expectedMarkovHittingTime(mdp, markov, target_state, 1)
+# print("Hitting time:", hitting_checkins[mdp.states.index(start_state)])
 
 if False:
     # start_state = (8, 11)
@@ -2881,77 +2967,77 @@ if False:
 
 # if True:
 #     exit()
+if True:
+    start_state_index = mdp.states.index(start_state)
 
-start_state_index = mdp.states.index(start_state)
+    distributions = []
+        
+    distStart = []
+    for i in range(len(mdp.states)):
+        distStart.append(1 if i == start_state_index else 0)
+    # distributions.append(distStart)
 
-distributions = []
-    
-distStart = []
-for i in range(len(mdp.states)):
-    distStart.append(1 if i == start_state_index else 0)
-# distributions.append(distStart)
+    # distributions.append(uniform(mdp))
+    # distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
+    # distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
+    # distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
 
-# distributions.append(uniform(mdp))
-# distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
-# distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
-# distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
+    initialDistribution = dirac(mdp, start_state)
+    # initialDistribution = dirac(mdp, (start_state[0]-1, start_state[1]))
+    # initialDistribution = dirac(mdp, (start_state[0]+1, start_state[1]))
+    # initialDistribution = dirac(mdp, (start_state[0], start_state[1]-1))
+    # initialDistribution = dirac(mdp, (start_state[0], start_state[1]+1))
+    initialDistributionCombo = \
+        0.5 * np.array(dirac(mdp, start_state)) + \
+        0.125 * np.array(dirac(mdp, (start_state[0]-1, start_state[1]))) + \
+        0.125 * np.array(dirac(mdp, (start_state[0]+1, start_state[1]))) + \
+        0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]-1))) + \
+        0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]+1)))
 
-initialDistribution = dirac(mdp, start_state)
-# initialDistribution = dirac(mdp, (start_state[0]-1, start_state[1]))
-# initialDistribution = dirac(mdp, (start_state[0]+1, start_state[1]))
-# initialDistribution = dirac(mdp, (start_state[0], start_state[1]-1))
-# initialDistribution = dirac(mdp, (start_state[0], start_state[1]+1))
-initialDistributionCombo = \
-    0.5 * np.array(dirac(mdp, start_state)) + \
-    0.125 * np.array(dirac(mdp, (start_state[0]-1, start_state[1]))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0]+1, start_state[1]))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]-1))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]+1)))
+    # distributions.append(initialDistributionCombo)
+    distributions.append(initialDistribution)
+    # initialDistribution = initialDistributionCombo
 
-# distributions.append(initialDistributionCombo)
-distributions.append(initialDistribution)
-# initialDistribution = initialDistributionCombo
+    # margins = [0, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05]
+    # margins = np.arange(0, 0.1001, 0.005)
+    # margins = np.arange(0, 0.0501, 0.005)
+    # margins = np.arange(0.055, 0.1001, 0.005)
+    # margins = np.arange(0.01, 0.0251, 0.005)
+    margins = [0]
+    # margins = [0.015]
+    repeats = 1
+    results = []
+    for margin in margins:
+        print("\n\n  Running margin",margin,"\n\n")
 
-# margins = [0, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05]
-# margins = np.arange(0, 0.1001, 0.005)
-# margins = np.arange(0, 0.0501, 0.005)
-# margins = np.arange(0.055, 0.1001, 0.005)
-# margins = np.arange(0.01, 0.0251, 0.005)
-margins = [0.025]
-# margins = [0.015]
-repeats = 3
-results = []
-for margin in margins:
-    print("\n\n  Running margin",margin,"\n\n")
+        running_time_avg = 0
+        error = -1
+        trimmed = 0
+        
+        for i in range(repeats):
+            running_time, error, trimmed = runChains(
+                grid, mdp, discount, start_state, target_state,
+                checkin_periods=[1, 2, 3, 4],
+                chain_length=4,
+                do_filter = True,
+                margin = margin,
+                distName = 'uniform',
+                startName = '',
+                distributions = distributions, 
+                initialDistribution = initialDistribution,
+                bounding_box = bounding_box, 
+                TRUTH = TRUTH_C4L4, 
+                TRUTH_COSTS = TRUTH_COSTS_C4L4,
+                drawIntermediate=True)
 
-    running_time_avg = 0
-    error = -1
-    trimmed = 0
-    
-    for i in range(repeats):
-        running_time, error, trimmed = runChains(
-            grid, mdp, discount, start_state, target_state,
-            checkin_periods=[1, 2, 3],# 4],
-            chain_length=3,
-            do_filter = True,
-            margin = margin,
-            distName = 'uniform',
-            startName = '',
-            distributions = distributions, 
-            initialDistribution = initialDistribution,
-            bounding_box = bounding_box, 
-            TRUTH = TRUTH_C3L3,#TRUTH_C4L4, 
-            TRUTH_COSTS = TRUTH_COSTS_C3L3,#TRUTH_COSTS_C4L4,
-            drawIntermediate=False)
+            running_time_avg += running_time
+        running_time_avg /= repeats
 
-        running_time_avg += running_time
-    running_time_avg /= repeats
-
-    quality = (1 - error) * 100
-    results.append((margin, running_time_avg, quality, trimmed))
-    print("\nRESULTS:\n")
-    for r in results:
-        print(str(r[0])+","+str(r[1])+","+str(r[2])+","+str(r[3]))
+        quality = (1 - error) * 100
+        results.append((margin, running_time_avg, quality, trimmed))
+        print("\nRESULTS:\n")
+        for r in results:
+            print(str(r[0])+","+str(r[1])+","+str(r[2])+","+str(r[3]))
 
 
 # runCheckinSteps(1, 20)
