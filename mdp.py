@@ -26,6 +26,7 @@ import time
 import math
 
 from lp import linearProgrammingSolve
+from figure import drawParetoFront, loadDataChains
 
 class MDP:
     def __init__(self, states, actions, transitions, rewards, terminals):
@@ -1983,8 +1984,8 @@ def drawParetoStep(mdp, chains, initialDistribution, TRUTH, TRUTH_COSTS, plotNam
     start_state_costs, indices = getStartParetoValues(mdp, chains, initialDistribution)
         
     is_efficient = calculateParetoFront(start_state_costs)
-    saveDataChains(start_state_costs, is_efficient, "pareto-" + plotName)
-    drawChainsParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
+    saveDataChains(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName)
+    drawParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
 
 def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k):
     discount_t = pow(discount, k)
@@ -2449,17 +2450,22 @@ def calculateError(chains, is_efficient, true_front, bounding_box):
 
     return abs(area - area_true) / area_true
 
-def saveDataChains(chains, is_efficient, name):
-    jsonStr = json.dumps({'Chains': chains, 'Efficient': is_efficient}, indent=4)
+def saveDataChains(chains, indices, is_efficient, TRUTH, TRUTH_COSTS, name):
+    data = {'Points': chains, 'Indices': indices, 'Efficient': is_efficient}
+    if TRUTH is not None:
+        data['Truth'] = TRUTH
+    if TRUTH_COSTS is not None:
+        data['Truth Costs'] = TRUTH_COSTS
+    jsonStr = json.dumps(data, indent=4)
     
     with open(f'output/data/{name}.json', "w") as file:
         file.write(jsonStr)
 
-def loadDataChains(filename):
-    with open(f'output/data/{filename}.json', "r") as file:
-        jsonStr = file.read()
-        obj = json.loads(jsonStr)
-        return (obj['Chains'], obj['Efficient'])
+# def loadDataChains(filename):
+#     with open(f'output/data/{filename}.json', "r") as file:
+#         jsonStr = file.read()
+#         obj = json.loads(jsonStr)
+#         return (obj['Points'], obj['Indices'], obj['Efficient'])
 
 def drawChainsParetoFront(chains, indices, is_efficient, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
     plt.style.use('seaborn-whitegrid')
@@ -2842,8 +2848,8 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
     error = 0 if TRUTH is None else calculateError(start_state_costs, is_efficient, TRUTH, bounding_box)
     print("Error from true Pareto:",error)
 
-    saveDataChains(start_state_costs, is_efficient, "pareto-" + name)
-    drawChainsParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + name, title, bounding_box, prints=True)
+    saveDataChains(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + name)
+    drawParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + name, title, bounding_box, prints=True)
 
     print("All costs:",start_state_costs)
 
@@ -3018,8 +3024,8 @@ if False:
     }
 
     for name in names:
-        chains, is_efficient = loadDataChains(name)
-        drawChainsParetoFront(chains, is_efficient,
+        chains, indices, is_efficient = loadDataChains(name)
+        drawParetoFront(chains, indices, is_efficient,
             true_front = None, 
             true_costs = None, 
             name=name, title="", bounding_box=bounding_box, prints=False, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
