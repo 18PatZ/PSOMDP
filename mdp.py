@@ -1745,6 +1745,38 @@ def markovProbsFromPolicy(mdp, policy):
         transition_matrix.append(row)
     return np.array(transition_matrix)
 
+
+def policyEvaluation(mdp, policy, discount):
+    # U(s) = C(s, pi(s)) + sum over s' {T'(s', pi(s), s) U(s')}
+    # (I - P) U = C
+    
+    transition_matrix = markovProbsFromPolicy(mdp, policy)
+
+    n = len(mdp.states)
+
+    I = np.identity(n)
+    P = discount * np.matrix.copy(transition_matrix)
+    C = np.array([mdp.rewards[state][policy[state]] for state in mdp.states])
+
+    A = I - P
+
+    U = np.linalg.solve(A, C) # Ax = C
+
+    return U
+
+def extendPolicyEvaluation(mdp, policy, oldEval, discount):
+    U = []
+    for i in range(len(mdp.states)):
+        state = mdp.states[i]
+        action = policy[action]
+        u_i = mdp.rewards[state, action]
+        
+        for j in range(len(mdp.states)):
+            end_state = mdp.states[j]
+            u_i += discount * mdp.transitions[state][action][end_state] * oldEval[j]
+        U.append(u_i)
+    return U
+
 def getAllStateParetoValues(mdp, chain):
     pareto_values = []
     for i in range(len(mdp.states)):
@@ -1967,24 +1999,27 @@ def drawParetoStep(chains, initialDistribution, TRUTH, TRUTH_COSTS, plotName, ti
     saveDataChains(start_state_costs, is_efficient, "pareto-" + plotName)
     drawChainsParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
 
-def createChainTail(grid, mdp, discount, target_state, compMDPs, greedyCompMDPs, k):
+def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k):
     discount_t = pow(discount, k)
+    discount_c_t = pow(discount_checkin, k)
     compMDP = compMDPs[k]
     greedyMDP = greedyCompMDPs[k]
 
     policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
-    policy_greedy, values_greedy = linearProgrammingSolve(grid, greedyMDP, discount_t)
+    policy_greedy, values_greedy = linearProgrammingSolve(grid, greedyMDP, discount_c_t)
     
     #hitting_time = expectedMarkovHittingTime(mdp, markov, target_state, k)
     hitting_checkins = expectedMarkovHittingTime(mdp, markovProbsFromPolicy(compMDP, policy), target_state, 1)
 
+    eval_greedy = policyEvaluation(greedyMDP, policy_greedy, discount_c_t)
+
     hitting_checkins_greedy = expectedMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1)
 
     #chain = [[k], values, [policy], (hitting_time, hitting_checkins)]
-    chain = [[k], [[values, hitting_checkins], [values_greedy, hitting_checkins_greedy]]]
+    chain = [[k], [[values, hitting_checkins], [values_greedy, eval_greedy, hitting_checkins_greedy]]]
     return chain
 
-def extendChain(compMDPs, greedyCompMDPs, chain, k):
+def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, k):
     compMDP = compMDPs[k]
     greedyMDP = greedyCompMDPs[k]
 
@@ -1993,6 +2028,7 @@ def extendChain(compMDPs, greedyCompMDPs, chain, k):
 
     tail_values = chain[1]
     discount_t = pow(discount, k)
+    discount_c_t = pow(discount_checkin, k)
 
     #new_values = runOneValueIterationPass(tail_values, discount_t, compMDP)
 
@@ -2015,21 +2051,23 @@ def extendChain(compMDPs, greedyCompMDPs, chain, k):
     new_hitting = extendMarkovHittingTime(mdp, markovProbsFromPolicy(compMDP, policy), target_state, 1, prev_hitting)
 
 
-    new_values_greedy = runOneValueIterationPass(tail_values[1][0], discount_t, greedyMDP)
+    new_values_greedy = runOneValueIterationPass(tail_values[1][0], discount_c_t, greedyMDP)
     policy_greedy = policyFromValues(greedyMDP, new_values_greedy)
+
+    new_eval_greedy = extendPolicyEvaluation(greedyMDP, policy_greedy, tail_values[1][1], discount_c_t)
     
-    prev_hitting_greedy = tail_values[1][1]
+    prev_hitting_greedy = tail_values[1][2]
     new_hitting_greedy = extendMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1, prev_hitting_greedy)
     
-    new_chain = [chain_checkins, [[new_values, new_hitting], [new_values_greedy, new_hitting_greedy]]]
+    new_chain = [chain_checkins, [[new_values, new_hitting], [new_values_greedy, new_eval_greedy, new_hitting_greedy]]]
     return new_chain
 
-def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title):
+def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
     greedy_mdp = convertToGreedyMDP(grid, mdp)
-    all_greedy_compMDPs = createCompositeMDPs(greedy_mdp, discount, checkin_periods[-1])
+    all_greedy_compMDPs = createCompositeMDPs(greedy_mdp, discount_checkin, checkin_periods[-1])
     greedyCompMDPs = {k: all_greedy_compMDPs[k - 1] for k in checkin_periods}
 
     chains_list = []
@@ -2038,7 +2076,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
     chains = []
     l = 1
     for k in checkin_periods:
-        chain = createChainTail(grid, mdp, discount, target_state, compMDPs, greedyCompMDPs, k)
+        chain = createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k)
         chains.append(chain)
         all_chains.append(chain)
 
@@ -2061,7 +2099,7 @@ def calculateChainValues(grid, mdp, discount, start_state, target_state, checkin
                 if i == 1 and k == tail[0][0]:
                     continue # don't duplicate recurring tail value (e.g. 23* and 233*)
                 
-                new_chain = extendChain(compMDPs, greedyCompMDPs, tail, k)
+                new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k)
                 chains.append(new_chain)
                 all_chains.append(new_chain)
         
@@ -2571,18 +2609,18 @@ def drawCompares(data):
 
 
 
-def drawChainPolicy(grid, mdp, discount, start_state, target_state, checkin_periods, chain_checkins, name):
+def drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_state, checkin_periods, chain_checkins, name):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
     greedy_mdp = convertToGreedyMDP(grid, mdp)
-    all_greedy_compMDPs = createCompositeMDPs(greedy_mdp, discount, checkin_periods[-1])
+    all_greedy_compMDPs = createCompositeMDPs(greedy_mdp, discount_checkin, checkin_periods[-1])
     greedyCompMDPs = {k: all_greedy_compMDPs[k - 1] for k in checkin_periods}
 
     i = len(chain_checkins) - 1
-    chain = createChainTail(grid, mdp, discount, target_state, compMDPs, greedyCompMDPs, chain_checkins[i])
+    chain = createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, chain_checkins[i])
     while i >= 0:
-        chain = extendChain(compMDPs, greedyCompMDPs, chain, chain_checkins[i])
+        chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, chain_checkins[i])
         i -= 1
     
     #chain = ([k], values, [policy], (hitting_time, hitting_checkins))
@@ -2714,7 +2752,7 @@ def drawChainPolicy(grid, mdp, discount, start_state, target_state, checkin_peri
     A.draw(name + '.pdf')#, prog="neato")
 
 
-def runChains(grid, mdp, discount, start_state, target_state, 
+def runChains(grid, mdp, discount, discount_checkin, start_state, target_state, 
     checkin_periods, chain_length, do_filter, margin, distName, startName, distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate):
 
     title = distName[0].upper() + distName[1:]
@@ -2733,7 +2771,7 @@ def runChains(grid, mdp, discount, start_state, target_state,
 
     c_start = time.time()
 
-    start_state_costs, indices = calculateChainValues(grid, mdp, discount, start_state, target_state, 
+    start_state_costs, indices = calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, 
         checkin_periods=checkin_periods, 
         # execution_cost_factor=1, 
         # checkin_costs={2: 10, 3: 5, 4: 2}, 
@@ -2790,6 +2828,8 @@ def convertToGreedyMDP(grid, mdp):
 
 grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, cadence2=3)
 # grid, mdp, discount, start_state = splitterGrid2(rows = 12)
+discount_checkin = discount
+
 
 
 # end = time.time()
@@ -2837,7 +2877,7 @@ if False:
         checkins = []
         for l in c[:-1]:
             checkins.append(int(l))
-        drawChainPolicy(grid, mdp, discount, start_state, target_state, 
+        drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_state, 
             checkin_periods=[1, 2, 3, 4], 
             chain_checkins=checkins, 
             # name="output/policy-chain-splitter3-" + c[:-1])
@@ -3062,7 +3102,7 @@ if True:
         
         for i in range(repeats):
             running_time, error, trimmed = runChains(
-                grid, mdp, discount, start_state, target_state,
+                grid, mdp, discount, discount_checkin, start_state, target_state,
                 checkin_periods=[1, 2, 3, 4],
                 chain_length=4,
                 do_filter = True,
