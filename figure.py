@@ -6,7 +6,12 @@ from matplotlib import rc
 import json
 
 def translateLabel(label):
-    label = label[:-2] + "$\overline{" + label[-2] + "}$"
+    star_index = label.index('*')
+    prefix = label[:star_index-1]
+    tail = label[star_index-1]
+    suffix = label[star_index+1:]
+    label = prefix + "$\overline{" + tail + "}$" + suffix
+    #label = label[:-2] + "$\overline{" + label[-2] + "}$"
     # label = label[:-2] + "$\dot{" + label[-2] + "}$"
     
     return label
@@ -94,7 +99,7 @@ def scatter(ax, points, doLabel, color, lcolor, arrows=False, x_offset = 0, x_sc
                     color=lcolor,fontsize=9)
 
 
-def drawParetoFront(points, indices, is_efficient, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
+def drawParetoFront(points, indices, is_efficient, realizable_front, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
     plt.style.use('seaborn-whitegrid')
 
     if prints:
@@ -163,6 +168,11 @@ def drawParetoFront(points, indices, is_efficient, true_front, true_costs, name,
         manhattan_lines(ax, true_front, color="green", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
         scatter(ax, true_front, doLabel=False, color="green", lcolor="green", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
+    # draw realizable front
+    if realizable_front is not None:
+        manhattan_lines(ax, realizable_front, color="blue", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+        scatter(ax, realizable_front, doLabel=True, color="blue", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+
     # scatter(ax, points_dominated, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
     # earlier draws (usually) are in the back
@@ -209,8 +219,9 @@ def loadDataChains(filename):
 
         truth = obj['Truth'] if 'Truth' in obj else None
         truth_costs = obj['Truth Costs'] if 'Truth Costs' in obj else None
+        realizable_front = obj['Realizable Front'] if 'Realizable Front' in obj else None
 
-        return (obj['Points'], obj['Indices'], obj['Efficient'], truth, truth_costs)
+        return (obj['Points'], obj['Indices'], obj['Efficient'], realizable_front, truth, truth_costs)
 
 
 
@@ -238,8 +249,8 @@ if __name__ == "__main__":
     }
 
     for name in names:
-        points, indices, is_efficient, truth, truth_costs = loadDataChains(name)
-        drawParetoFront(points, indices, is_efficient,
+        points, indices, is_efficient, realizable_front, truth, truth_costs = loadDataChains(name)
+        drawParetoFront(points, indices, is_efficient, realizable_front,
             true_front = truth, 
             true_costs = truth_costs, 
             name=name, title="", bounding_box=bounding_box, prints=True, x_offset=x_offset, x_scale=x_scale, loffsets=label_offsets)

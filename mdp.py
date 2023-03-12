@@ -1822,7 +1822,7 @@ def getStateDistributionParetoValues(mdp, chain, distributions):
     return pareto_values
 
 
-def getStartParetoValues(mdp, chains, initialDistribution):
+def getStartParetoValues(mdp, chains, initialDistribution, is_lower_bound):
     dists = [initialDistribution]
 
     costs = []
@@ -1833,7 +1833,7 @@ def getStartParetoValues(mdp, chains, initialDistribution):
             name += str(checkin)
         name += "*"
 
-        points = chainPoints(chain)
+        points = chainPoints(chain, is_lower_bound)
         idx = []
         #nameSuff = [' $\pi^\\ast$', ' $\pi^c$']
         for p in range(len(points)):
@@ -1879,18 +1879,25 @@ def uniform(mdp):
     
     return dist
 
-def chainPoints(chain):
+def chainPoints(chain, is_lower_bound):
     execution_pi_star = chain[1][0][0]
     checkins_pi_star = chain[1][0][1]
     
     checkins_pi_c = chain[1][1][0]
     execution_pi_c = chain[1][1][1]
     
+    execution_pi_mid = chain[1][2][0]
+    checkins_pi_mid = chain[1][2][1]
+    
     # return [[values, hitting_checkins]]
-    return [[execution_pi_star, checkins_pi_star], [execution_pi_star, checkins_pi_c], [execution_pi_c, checkins_pi_c]]
+    if is_lower_bound:
+        return [[execution_pi_star, checkins_pi_star], [execution_pi_star, checkins_pi_c], [execution_pi_c, checkins_pi_c]]
+    else:
+        return [[execution_pi_star, checkins_pi_star], [execution_pi_c, checkins_pi_c], [execution_pi_mid, checkins_pi_mid]]
+        #return [[execution_pi_star, checkins_pi_star], [execution_pi_c, checkins_pi_c]]
     # return [[values, hitting_checkins], [values, hitting_checkins_greedy], [values_greedy, hitting_checkins_greedy]]
 
-def step_filter(new_chains, all_chains, distributions, margin, bounding_box):
+def step_filter(new_chains, all_chains, distributions, margin, bounding_box, is_lower_bound):
 
     costs = []
     indices = []
@@ -1900,7 +1907,7 @@ def step_filter(new_chains, all_chains, distributions, margin, bounding_box):
 
         idx = []
 
-        points = chainPoints(chain)
+        points = chainPoints(chain, is_lower_bound)
 
         for j in range(len(points)):
             point = points[j]
@@ -1976,18 +1983,25 @@ def chains_to_str(chains):
     return text
     
 
-def drawParetoStep(mdp, chains, initialDistribution, TRUTH, TRUTH_COSTS, plotName, title, stepLen, bounding_box):
+def drawParetoStep(mdp, chains, chains_upper, initialDistribution, TRUTH, TRUTH_COSTS, plotName, title, stepLen, bounding_box):
 
     plotName += "-step" + str(stepLen)
     title += " Length " + str(stepLen)
 
-    start_state_costs, indices = getStartParetoValues(mdp, chains, initialDistribution)
+    start_state_costs, indices = getStartParetoValues(mdp, chains, initialDistribution, is_lower_bound=True)
+    start_state_costs_upper, _ = getStartParetoValues(mdp, chains_upper, initialDistribution, is_lower_bound=False)
         
     is_efficient = calculateParetoFront(start_state_costs)
-    saveDataChains(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName)
-    drawParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
 
-def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k):
+    is_efficient_upper = calculateParetoFront(start_state_costs_upper)
+    front_upper = [start_state_costs_upper[i] for i in range(len(start_state_costs_upper)) if is_efficient_upper[i]]
+    front_upper.sort(key = lambda point: point[1][0])
+
+    saveDataChains(start_state_costs, indices, is_efficient, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + plotName)
+    drawParetoFront(start_state_costs, indices, is_efficient, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
+
+
+def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k, alpha, beta):
     discount_t = pow(discount, k)
     discount_c_t = pow(discount_checkin, k)
     compMDP = compMDPs[k]
@@ -2003,6 +2017,13 @@ def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDP
     eval_normal = policyEvaluation(greedyMDP, policy, discount_c_t)
     eval_greedy = policyEvaluation(compMDP, policy_greedy, discount_t)
 
+    values_blend = {state: alpha * values[state] + beta * values_greedy[state] for state in mdp.states}
+    blendedMDP = blendMDPCosts(compMDP, greedyMDP, alpha, beta) 
+    policy_blend = policyFromValues(blendedMDP, values_blend)
+
+    eval_blend_exec = policyEvaluation(compMDP, policy_blend, discount_t)
+    eval_blend_check = policyEvaluation(greedyMDP, policy_blend, discount_c_t)
+
     #hitting_checkins_greedy = expectedMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1)
 
     # print(k)
@@ -2015,10 +2036,10 @@ def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDP
 
     #chain = [[k], values, [policy], (hitting_time, hitting_checkins)]
     #chain = [[k], [[values, hitting_checkins], [values_greedy, eval_greedy]]]
-    chain = [[k], [[values, eval_normal], [values_greedy, eval_greedy]]]
+    chain = [[k], [[values, eval_normal], [values_greedy, eval_greedy], [eval_blend_exec, eval_blend_check]]]
     return chain
 
-def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, k):
+def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, k, alpha, beta):
     compMDP = compMDPs[k]
     greedyMDP = greedyCompMDPs[k]
 
@@ -2059,12 +2080,52 @@ def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, k):
     
     # prev_hitting_greedy = tail_values[1][2]
     # new_hitting_greedy = extendMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1, prev_hitting_greedy)
+
+
+    values_blend = {state: alpha * new_values[state] + beta * new_values_greedy[state] for state in mdp.states}
+    blendedMDP = blendMDPCosts(compMDP, greedyMDP, alpha, beta) 
+    policy_blend = policyFromValues(blendedMDP, values_blend)
+
+    eval_blend_exec = extendPolicyEvaluation(compMDP, policy_blend, tail_values[2][0], discount_t)
+    eval_blend_check = extendPolicyEvaluation(greedyMDP, policy_blend, tail_values[2][1], discount_c_t)
     
     # new_chain = [chain_checkins, [[new_values, new_hitting], [new_values_greedy, new_eval_greedy, new_hitting_greedy]]]
-    new_chain = [chain_checkins, [[new_values, new_eval], [new_values_greedy, new_eval_greedy]]]
+    new_chain = [chain_checkins, [[new_values, new_eval], [new_values_greedy, new_eval_greedy], [eval_blend_exec, eval_blend_check]]]
     return new_chain
 
-def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title):
+
+def runExtensionStage(stage, is_lower_bound, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, alpha, beta):
+    chains = []
+    previous_chains = chains_list[stage - 1]
+
+    for tail in previous_chains:
+        for k in checkin_periods:
+            if stage == 1 and k == tail[0][0]:
+                continue # don't duplicate recurring tail value (e.g. 23* and 233*)
+            
+            new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k, alpha, beta)
+            chains.append(new_chain)
+            all_chains.append(new_chain)
+    
+    if do_filter:
+        filtered_chains, filtered_all_chains = step_filter(chains, all_chains, distributions, margin, bounding_box, is_lower_bound)
+        #print("Filtered from",len(chains),"to",len(filtered_chains),"new chains and",len(all_chains),"to",len(filtered_all_chains),"total.")
+        og_len = len(all_chains) - len(chains)
+        new_len_min_add = len(filtered_all_chains) - len(filtered_chains)
+        removed = og_len - new_len_min_add
+        
+        # print("Considering new chains: " + chains_to_str(chains))
+        print(("Lower" if is_lower_bound else "Upper"),"bound: added",len(filtered_chains),"out of",len(chains),"new chains and removed",removed,"out of",og_len,"previous chains.")
+        all_chains = filtered_all_chains
+
+        chains_list.append(filtered_chains)
+    else:
+        chains_list.append(chains)
+
+    return all_chains
+
+
+def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, alpha, beta):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
@@ -2079,65 +2140,58 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, tar
     chains_list = []
     all_chains = []
 
-    chains = []
+    chains_list_upper = []
+    all_chains_upper = []
+
+    chains_list.append([])
+    chains_list_upper.append([])
+
     l = 1
+    
     for k in checkin_periods:
-        chain = createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k)
-        chains.append(chain)
+        chain = createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k, alpha, beta)
+        chains_list[0].append(chain)
         all_chains.append(chain)
 
-    chains_list.append(chains)
+        chains_list_upper[0].append(chain)
+        all_chains_upper.append(chain)
+
+    # if True:
+    print(getStartParetoValues(mdp, all_chains_upper, initialDistribution, is_lower_bound=False))
+    #     exit()
+
 
     if drawIntermediate:
-        drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box)
+        drawParetoStep(mdp, all_chains, all_chains_upper, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box)
+
 
     print("--------")
-    print(len(all_chains),"current chains")
+    print(len(all_chains),"current lower bound chains")
+    print(len(all_chains_upper),"current upper bound chains")
     # print("Current chains: " + chains_to_str(all_chains))
 
     for i in range(1, chain_length):
         l += 1
-        previous_chains = chains_list[i - 1]
-        chains = []
 
-        for tail in previous_chains:
-            for k in checkin_periods:
-                if i == 1 and k == tail[0][0]:
-                    continue # don't duplicate recurring tail value (e.g. 23* and 233*)
-                
-                new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k)
-                chains.append(new_chain)
-                all_chains.append(new_chain)
-        
-        if do_filter:
-            filtered_chains, filtered_all_chains = step_filter(chains, all_chains, distributions, margin, bounding_box)
-            #print("Filtered from",len(chains),"to",len(filtered_chains),"new chains and",len(all_chains),"to",len(filtered_all_chains),"total.")
-            og_len = len(all_chains) - len(chains)
-            new_len_min_add = len(filtered_all_chains) - len(filtered_chains)
-            removed = og_len - new_len_min_add
-            
-            # print("Considering new chains: " + chains_to_str(chains))
-            print("Added",len(filtered_chains),"out of",len(chains),"new chains and removed",removed,"out of",og_len,"previous chains.")
-            all_chains = filtered_all_chains
+        all_chains = runExtensionStage(i, True, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, alpha, beta)
 
-            chains_list.append(filtered_chains)
-        else:
-            chains_list.append(chains)
+        all_chains_upper = runExtensionStage(i, False, chains_list_upper, all_chains_upper, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, alpha, beta)
 
         if drawIntermediate:
-            drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box)
+            drawParetoStep(mdp, all_chains, all_chains_upper, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box)
 
         print("--------")
-        print(len(all_chains),"current chains")
+        print(len(all_chains),"current lower bound chains")
+        print(len(all_chains_upper),"current upper bound chains")
         # print("Current chains: " + chains_to_str(all_chains))
 
     start_state_index = mdp.states.index(start_state)
 
-    chains = all_chains
     # chains = sorted(chains, key=lambda chain: chain[1][start_state], reverse=True)
 
-    start_state_costs, indices = getStartParetoValues(mdp, chains, initialDistribution)
-    return start_state_costs, indices
+    start_state_costs, indices = getStartParetoValues(mdp, all_chains, initialDistribution, is_lower_bound=True)
+    start_state_costs_upper, _ = getStartParetoValues(mdp, all_chains_upper, initialDistribution, is_lower_bound=False)
+    return start_state_costs, indices, start_state_costs_upper
 
     # costs = []
     # start_state_costs = []
@@ -2450,8 +2504,8 @@ def calculateError(chains, is_efficient, true_front, bounding_box):
 
     return abs(area - area_true) / area_true
 
-def saveDataChains(chains, indices, is_efficient, TRUTH, TRUTH_COSTS, name):
-    data = {'Points': chains, 'Indices': indices, 'Efficient': is_efficient}
+def saveDataChains(chains, indices, is_efficient, front_upper, TRUTH, TRUTH_COSTS, name):
+    data = {'Points': chains, 'Indices': indices, 'Efficient': is_efficient, 'Realizable Front': front_upper}
     if TRUTH is not None:
         data['Truth'] = TRUTH
     if TRUTH_COSTS is not None:
@@ -2467,112 +2521,112 @@ def saveDataChains(chains, indices, is_efficient, TRUTH, TRUTH_COSTS, name):
 #         obj = json.loads(jsonStr)
 #         return (obj['Points'], obj['Indices'], obj['Efficient'])
 
-def drawChainsParetoFront(chains, indices, is_efficient, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
-    plt.style.use('seaborn-whitegrid')
+# def drawChainsParetoFront(chains, indices, is_efficient, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
+#     plt.style.use('seaborn-whitegrid')
 
-    arrows = True
+#     arrows = True
 
-    font = FontProperties()
-    font.set_family('serif')
-    font.set_name('Times New Roman')
-    font.set_size(20)
-    # rc('font',**{'family':'serif','serif':['Times'],'size':20})
-    plt.rcParams['font.family'] = 'serif'
-    plt.rcParams['font.serif'] = ['Times']
-    plt.rcParams['font.size'] = 20
-    plt.rcParams["text.usetex"] = True
-    # plt.rcParams['font.weight'] = 'bold'
+#     font = FontProperties()
+#     font.set_family('serif')
+#     font.set_name('Times New Roman')
+#     font.set_size(20)
+#     # rc('font',**{'family':'serif','serif':['Times'],'size':20})
+#     plt.rcParams['font.family'] = 'serif'
+#     plt.rcParams['font.serif'] = ['Times']
+#     plt.rcParams['font.size'] = 20
+#     plt.rcParams["text.usetex"] = True
+#     # plt.rcParams['font.weight'] = 'bold'
     
-    chains_filtered = []
-    chains_dominated = []
-    for i in range(len(chains)):
-        if is_efficient[i]:
-            chains_filtered.append(chains[i])
-        else:
-            chains_dominated.append(chains[i])
+#     chains_filtered = []
+#     chains_dominated = []
+#     for i in range(len(chains)):
+#         if is_efficient[i]:
+#             chains_filtered.append(chains[i])
+#         else:
+#             chains_dominated.append(chains[i])
 
-    n = 0
-    is_efficient_chains = []
-    for i in range(len(indices)):
-        idx = indices[i][1]
+#     n = 0
+#     is_efficient_chains = []
+#     for i in range(len(indices)):
+#         idx = indices[i][1]
 
-        efficient = False
-        for j in idx:
-            if is_efficient[j]:
-                efficient = True
-                n += 1
-                break
-        is_efficient_chains.append(efficient)
+#         efficient = False
+#         for j in idx:
+#             if is_efficient[j]:
+#                 efficient = True
+#                 n += 1
+#                 break
+#         is_efficient_chains.append(efficient)
 
-    print(n,"vs",len(indices))
+#     print(n,"vs",len(indices))
 
-    chains_filtered.sort(key = lambda chain: chain[1][0])
+#     chains_filtered.sort(key = lambda chain: chain[1][0])
 
-    if prints:
-        print("Non-dominated chains:")
-        for chain in chains_filtered:
-            print("  ", chain[0])
-    # x_f = [chain[1] for chain in chains_filtered]
-    # y_f = [chain[2] for chain in chains_filtered]
-    # labels_f = [chain[0] for chain in chains_filtered]
+#     if prints:
+#         print("Non-dominated chains:")
+#         for chain in chains_filtered:
+#             print("  ", chain[0])
+#     # x_f = [chain[1] for chain in chains_filtered]
+#     # y_f = [chain[2] for chain in chains_filtered]
+#     # labels_f = [chain[0] for chain in chains_filtered]
 
-    if prints:
-        print(len(chains_dominated),"dominated chains out of",len(chains),"|",len(chains_filtered),"non-dominated")
+#     if prints:
+#         print(len(chains_dominated),"dominated chains out of",len(chains),"|",len(chains_filtered),"non-dominated")
 
-    # costs = [chain[1] for chain in chains_filtered]
-    if prints:
-        print("Pareto front:",chains_filtered)
+#     # costs = [chain[1] for chain in chains_filtered]
+#     if prints:
+#         print("Pareto front:",chains_filtered)
     
-    fig, ax = plt.subplots()
-    # ax.scatter(x, y, c=["red" if is_efficient[i] else "black" for i in range(len(chains))])
-    # ax.scatter(x_f, y_f, c="red")
+#     fig, ax = plt.subplots()
+#     # ax.scatter(x, y, c=["red" if is_efficient[i] else "black" for i in range(len(chains))])
+#     # ax.scatter(x_f, y_f, c="red")
 
-    if true_costs is not None:
-        scatter(ax, true_costs, doLabel=False, color="gainsboro", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+#     if true_costs is not None:
+#         scatter(ax, true_costs, doLabel=False, color="gainsboro", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
-    if true_front is not None:
-        manhattan_lines(ax, true_front, color="green", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
-        scatter(ax, true_front, doLabel=False, color="green", lcolor="green", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
-
-    
-    # scatter(ax, chains_dominated, doLabel=True, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale)
-    
-    # scatter(ax, chains_dominated, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
-
-    for i in range(len(is_efficient_chains)):
-        points = []
-        for j in indices[i][1]:
-            points.append(chains[j])
-        if is_efficient_chains[i]:
-            box(ax, points, color="red", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
-            scatter(ax, points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
-        else:
-            print("bad",indices[i][0], points[0])
-            box(ax, points, color="orange", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
-            scatter(ax, points, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+#     if true_front is not None:
+#         manhattan_lines(ax, true_front, color="green", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+#         scatter(ax, true_front, doLabel=False, color="green", lcolor="green", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
     
-
-    manhattan_lines(ax, chains_filtered, color="red", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
-    scatter(ax, chains_filtered, doLabel=True, color="red", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+#     # scatter(ax, chains_dominated, doLabel=True, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale)
     
-    # for i in range(len(chains)):
-    #     plt.plot(x[i], y[i])
+#     # scatter(ax, chains_dominated, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
-    # plt.xlabel("Execution Cost", fontproperties=font, fontweight='bold')
-    # plt.ylabel("Checkin Cost", fontproperties=font, fontweight='bold')
-    plt.xlabel(r"\textbf{Execution Cost}", fontproperties=font, fontweight='bold')
-    plt.ylabel(r"\textbf{Checkin Cost}", fontproperties=font, fontweight='bold')
-    #plt.title(title)
+#     for i in range(len(is_efficient_chains)):
+#         points = []
+#         for j in indices[i][1]:
+#             points.append(chains[j])
+#         if is_efficient_chains[i]:
+#             box(ax, points, color="red", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+#             scatter(ax, points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+#         else:
+#             print("bad",indices[i][0], points[0])
+#             box(ax, points, color="orange", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+#             scatter(ax, points, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
-    plt.xlim((bounding_box[0] + x_offset) * x_scale)
-    plt.ylim(bounding_box[1])
+    
 
-    plt.gcf().set_size_inches(10, 7)
-    plt.savefig(f'output/{name}.pdf', format="pdf", bbox_inches='tight', pad_inches=0.2, dpi=300)
-    # plt.savefig(f'output/{name}.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
-    # plt.savefig(f'output/pareto-{name}.svg', bbox_inches='tight', pad_inches=0.5, dpi=300, format="svg")
-    # plt.show()
+#     manhattan_lines(ax, chains_filtered, color="red", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+#     scatter(ax, chains_filtered, doLabel=True, color="red", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+    
+#     # for i in range(len(chains)):
+#     #     plt.plot(x[i], y[i])
+
+#     # plt.xlabel("Execution Cost", fontproperties=font, fontweight='bold')
+#     # plt.ylabel("Checkin Cost", fontproperties=font, fontweight='bold')
+#     plt.xlabel(r"\textbf{Execution Cost}", fontproperties=font, fontweight='bold')
+#     plt.ylabel(r"\textbf{Checkin Cost}", fontproperties=font, fontweight='bold')
+#     #plt.title(title)
+
+#     plt.xlim((bounding_box[0] + x_offset) * x_scale)
+#     plt.ylim(bounding_box[1])
+
+#     plt.gcf().set_size_inches(10, 7)
+#     plt.savefig(f'output/{name}.pdf', format="pdf", bbox_inches='tight', pad_inches=0.2, dpi=300)
+#     # plt.savefig(f'output/{name}.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
+#     # plt.savefig(f'output/pareto-{name}.svg', bbox_inches='tight', pad_inches=0.5, dpi=300, format="svg")
+#     # plt.show()
 
 
 
@@ -2799,7 +2853,7 @@ def drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_s
 
 
 def runChains(grid, mdp, discount, discount_checkin, start_state, target_state, 
-    checkin_periods, chain_length, do_filter, margin, distName, startName, distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate):
+    checkin_periods, chain_length, do_filter, margin, distName, startName, distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, alpha, beta):
 
     title = distName[0].upper() + distName[1:]
 
@@ -2817,7 +2871,7 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
 
     c_start = time.time()
 
-    start_state_costs, indices = calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, 
+    start_state_costs, indices, start_state_costs_upper = calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, 
         checkin_periods=checkin_periods, 
         # execution_cost_factor=1, 
         # checkin_costs={2: 10, 3: 5, 4: 2}, 
@@ -2831,14 +2885,19 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
         TRUTH=TRUTH, 
         TRUTH_COSTS=TRUTH_COSTS,
         name=name,
-        title=title)
+        title=title,
+        alpha=alpha, beta=beta)
 
-    numRemaining = len(start_state_costs)
+    numRemaining = len(start_state_costs) / 3 #because 3 points in each L
     numWouldBeTotal = pow(len(checkin_periods), chain_length)
     numPruned = numWouldBeTotal - numRemaining
     fractionTrimmed = numPruned / numWouldBeTotal * 100
 
     is_efficient = calculateParetoFront(start_state_costs)
+
+    is_efficient_upper = calculateParetoFront(start_state_costs_upper)
+    front_upper = [start_state_costs_upper[i] for i in range(len(start_state_costs_upper)) if is_efficient_upper[i]]
+    front_upper.sort(key = lambda point: point[1][0])
 
     c_end = time.time()
     running_time = c_end - c_start
@@ -2846,14 +2905,17 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
     print("Trimmed:",numPruned,"/",numWouldBeTotal,"(" + str(int(fractionTrimmed)) + "%)")
 
     error = 0 if TRUTH is None else calculateError(start_state_costs, is_efficient, TRUTH, bounding_box)
-    print("Error from true Pareto:",error)
+    print("Lower error from true Pareto:",error)
 
-    saveDataChains(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + name)
-    drawParetoFront(start_state_costs, indices, is_efficient, TRUTH, TRUTH_COSTS, "pareto-" + name, title, bounding_box, prints=True)
+    error_upper = 0 if TRUTH is None else calculateError(start_state_costs_upper, is_efficient_upper, TRUTH, bounding_box)
+    print("Upper error from true Pareto:",error_upper)
+
+    saveDataChains(start_state_costs, indices, is_efficient, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + name)
+    drawParetoFront(start_state_costs, indices, is_efficient, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + name, title, bounding_box, prints=True)
 
     print("All costs:",start_state_costs)
 
-    return running_time, error, fractionTrimmed
+    return running_time, error, fractionTrimmed, error_upper
 
 
 def convertToGreedyMDP(grid, mdp): # bad
@@ -2897,6 +2959,25 @@ def convertCompToCheckinMDP(grid, compMDP, checkin_period, discount):
         
     return checkinMDP
 
+def blendMDPCosts(mdp1, mdp2, alpha, beta):
+
+    blend = MDP([], [], {}, {}, [])
+
+    blend.states = mdp1.states.copy()
+    blend.terminals = mdp1.terminals.copy()
+    blend.actions = mdp1.actions.copy()
+    blend.transitions = mdp1.transitions.copy()
+
+    for state in mdp1.rewards:
+        (x, y) = state
+
+        blend.rewards[state] = {}
+
+        for action in mdp1.rewards[state]:
+            blend.rewards[state][action] = alpha * mdp1.rewards[state][action] + beta * mdp2.rewards[state][action]
+        
+    return blend
+
 # start = time.time()
 
 # grid, mdp, discount, start_state = paper2An(3)#splitterGrid(rows = 50, discount=0.99)#paper2An(3)#, 0.9999)
@@ -2904,6 +2985,48 @@ def convertCompToCheckinMDP(grid, compMDP, checkin_period, discount):
 grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, cadence2=3)
 # grid, mdp, discount, start_state = splitterGrid2(rows = 12)
 discount_checkin = discount
+
+# if True:
+
+#     k = 3
+#     alpha = 0.000005
+#     beta = 1 - alpha
+#     compMDP = createCompositeMDP(mdp, discount, k)
+#     checkinMDP = convertCompToCheckinMDP(grid, compMDP, k, discount_checkin)
+#     blendedMDP = blendMDPCosts(compMDP, checkinMDP, alpha, beta)
+
+#     discount_t = pow(discount, k)
+#     discount_c_t = pow(discount_checkin, k)
+
+#     policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
+#     policy_greedy, values_greedy = linearProgrammingSolve(grid, checkinMDP, discount_c_t, restricted_action_set=None, is_negative=True)
+#     policy_blend, values_blend = linearProgrammingSolve(grid, blendedMDP, discount_t)
+
+
+#     v1 = np.array([values[s] for s in mdp.states])
+#     v2 = np.array([values_greedy[s] for s in mdp.states])
+#     v3 = np.array([values_blend[s] for s in mdp.states])
+#     print("Diff A", np.linalg.norm(v1 - v2))
+
+#     v4 = alpha * v1 + beta * v2
+#     print("Diff B", np.linalg.norm(v3 - v4))
+#     print("Max diff", np.max(np.absolute(v3 - v4)))
+#     print(v3 - v4)
+
+#     m = 0
+#     for state in mdp.states:
+#         if policy_blend[state] != policy[state]:
+#             print(state, policy_blend[state], 'vs', policy[state])
+#             m += 1
+#     print(m,"different policy actions")
+
+
+#     s_ind = mdp.states.index(start_state)
+#     print(v1[s_ind], v2[s_ind], v3[s_ind], v4[s_ind])
+
+#     draw(grid, compMDP, values, policy, True, False, "output/leblend")
+
+#     exit()
 
 # end = time.time()
 # print("MDP creation time:", end - start)
@@ -3173,9 +3296,12 @@ if True:
         running_time_avg = 0
         error = -1
         trimmed = 0
+
+        alpha = 0.000005
+        beta = 1-alpha
         
         for i in range(repeats):
-            running_time, error, trimmed = runChains(
+            running_time, error, trimmed, error_upper = runChains(
                 grid, mdp, discount, discount_checkin, start_state, target_state,
                 checkin_periods=[1, 2, 3, 4],
                 chain_length=4,
@@ -3188,13 +3314,15 @@ if True:
                 bounding_box = bounding_box, 
                 TRUTH = TRUTH_C4L4, 
                 TRUTH_COSTS = TRUTH_COSTS_C4L4,
-                drawIntermediate=True)
+                drawIntermediate=True,
+                alpha=alpha, beta=beta)
 
             running_time_avg += running_time
         running_time_avg /= repeats
 
         quality = (1 - error) * 100
-        results.append((margin, running_time_avg, quality, trimmed))
+        quality_upper = (1 - error) * 100
+        results.append((margin, running_time_avg, quality, trimmed, quality_upper))
         print("\nRESULTS:\n")
         for r in results:
             print(str(r[0])+","+str(r[1])+","+str(r[2])+","+str(r[3]))
