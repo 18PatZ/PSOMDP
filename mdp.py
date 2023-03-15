@@ -1886,15 +1886,18 @@ def chainPoints(chain, is_lower_bound):
     checkins_pi_c = chain[1][1][0]
     execution_pi_c = chain[1][1][1]
     
-    execution_pi_mid = chain[1][2][0]
-    checkins_pi_mid = chain[1][2][1]
-    
     # return [[values, hitting_checkins]]
     if is_lower_bound:
         return [[execution_pi_star, checkins_pi_star], [execution_pi_star, checkins_pi_c], [execution_pi_c, checkins_pi_c]]
     else:
-        return [[execution_pi_star, checkins_pi_star], [execution_pi_c, checkins_pi_c], [execution_pi_mid, checkins_pi_mid]]
-        #return [[execution_pi_star, checkins_pi_star], [execution_pi_c, checkins_pi_c]]
+        points = [[execution_pi_star, checkins_pi_star], [execution_pi_c, checkins_pi_c]]
+        for i in range(len(chain[1][2])):
+            execution_pi_midpoint = chain[1][2][i][0]
+            checkins_pi_midpoint = chain[1][2][i][1]
+            points.append([execution_pi_midpoint, checkins_pi_midpoint])
+
+        return points
+        # return [[execution_pi_star, checkins_pi_star], [execution_pi_c, checkins_pi_c]]
     # return [[values, hitting_checkins], [values, hitting_checkins_greedy], [values_greedy, hitting_checkins_greedy]]
 
 def step_filter(new_chains, all_chains, distributions, margin, bounding_box, is_lower_bound):
@@ -2001,7 +2004,24 @@ def drawParetoStep(mdp, chains, chains_upper, initialDistribution, TRUTH, TRUTH_
     drawParetoFront(start_state_costs, indices, is_efficient, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
 
 
-def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k, alpha, beta):
+def mixedPolicy(values1, values2, compMDP1, compMDP2, alpha):
+    values_blend = {state: alpha * values1[state] + (1-alpha) * values2[state] for state in mdp.states}
+    blendedMDP = blendMDPCosts(compMDP1, compMDP2, alpha) 
+    policy_blend = policyFromValues(blendedMDP, values_blend)
+
+    return policy_blend
+
+
+def mixedPolicy2(values1, values2, compMDP1, compMDP2, alpha):
+    values_blend = {state: alpha * values1[state] + (1-alpha) * values2[state] for state in mdp.states}
+    blendedMDP = blendMDPCosts(compMDP1, compMDP2, alpha) 
+    policy_blend = policyFromValues(blendedMDP, values_blend)
+    #policy_blend = policyFromValues(compMDP, values_blend)
+
+    return policy_blend
+
+
+def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k, midpoints):
     discount_t = pow(discount, k)
     discount_c_t = pow(discount_checkin, k)
     compMDP = compMDPs[k]
@@ -2017,12 +2037,24 @@ def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDP
     eval_normal = policyEvaluation(greedyMDP, policy, discount_c_t)
     eval_greedy = policyEvaluation(compMDP, policy_greedy, discount_t)
 
-    values_blend = {state: alpha * values[state] + beta * values_greedy[state] for state in mdp.states}
-    blendedMDP = blendMDPCosts(compMDP, greedyMDP, alpha, beta) 
-    policy_blend = policyFromValues(blendedMDP, values_blend)
+    # values_blend = {state: alpha * values[state] + beta * values_greedy[state] for state in mdp.states}
+    # blendedMDP = blendMDPCosts(compMDP, greedyMDP, alpha, beta) 
+    # policy_blend = policyFromValues(blendedMDP, values_blend)
 
-    eval_blend_exec = policyEvaluation(compMDP, policy_blend, discount_t)
-    eval_blend_check = policyEvaluation(greedyMDP, policy_blend, discount_c_t)
+    # eval_blend_exec = policyEvaluation(compMDP, policy_blend, discount_t)
+    # eval_blend_check = policyEvaluation(greedyMDP, policy_blend, discount_c_t)
+    midpoint_evals = []
+
+    for midpoint_alpha in midpoints:
+        policy_blend = mixedPolicy(values, values_greedy, compMDP, greedyMDP, midpoint_alpha)
+        # policy_blend = mixedPolicy2(values, eval_greedy, compMDP, greedyMDP, midpoint_alpha)
+
+        eval_blend_exec = policyEvaluation(compMDP, policy_blend, discount_t)
+        eval_blend_check = policyEvaluation(greedyMDP, policy_blend, discount_c_t)
+
+        midpoint_evals.append((eval_blend_exec, eval_blend_check))
+
+
 
     #hitting_checkins_greedy = expectedMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1)
 
@@ -2036,10 +2068,10 @@ def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDP
 
     #chain = [[k], values, [policy], (hitting_time, hitting_checkins)]
     #chain = [[k], [[values, hitting_checkins], [values_greedy, eval_greedy]]]
-    chain = [[k], [[values, eval_normal], [values_greedy, eval_greedy], [eval_blend_exec, eval_blend_check]]]
+    chain = [[k], [[values, eval_normal], [values_greedy, eval_greedy], midpoint_evals]]
     return chain
 
-def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, k, alpha, beta):
+def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, k, midpoints):
     compMDP = compMDPs[k]
     greedyMDP = greedyCompMDPs[k]
 
@@ -2082,19 +2114,33 @@ def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, k, 
     # new_hitting_greedy = extendMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1, prev_hitting_greedy)
 
 
-    values_blend = {state: alpha * new_values[state] + beta * new_values_greedy[state] for state in mdp.states}
-    blendedMDP = blendMDPCosts(compMDP, greedyMDP, alpha, beta) 
-    policy_blend = policyFromValues(blendedMDP, values_blend)
+    # values_blend = {state: alpha * new_values[state] + beta * new_values_greedy[state] for state in mdp.states}
+    # blendedMDP = blendMDPCosts(compMDP, greedyMDP, alpha, beta) 
+    # policy_blend = policyFromValues(blendedMDP, values_blend)
 
-    eval_blend_exec = extendPolicyEvaluation(compMDP, policy_blend, tail_values[2][0], discount_t)
-    eval_blend_check = extendPolicyEvaluation(greedyMDP, policy_blend, tail_values[2][1], discount_c_t)
+    # eval_blend_exec = extendPolicyEvaluation(compMDP, policy_blend, tail_values[2][0], discount_t)
+    # eval_blend_check = extendPolicyEvaluation(greedyMDP, policy_blend, tail_values[2][1], discount_c_t)
+
+    midpoint_evals = tail_values[2]
+    new_midpoint_evals = []
+    for m_ind in range(len(midpoints)):
+        midpoint_alpha = midpoints[m_ind]
+        evals = midpoint_evals[m_ind]
+
+        policy_blend = mixedPolicy(new_values, new_values_greedy, compMDP, greedyMDP, midpoint_alpha)
+        # policy_blend = mixedPolicy2(new_values, new_eval_greedy, compMDP, greedyMDP, midpoint_alpha)
+
+        eval_blend_exec = extendPolicyEvaluation(compMDP, policy_blend, evals[0], discount_t)
+        eval_blend_check = extendPolicyEvaluation(greedyMDP, policy_blend, evals[1], discount_c_t)
+
+        new_midpoint_evals.append((eval_blend_exec, eval_blend_check))
     
     # new_chain = [chain_checkins, [[new_values, new_hitting], [new_values_greedy, new_eval_greedy, new_hitting_greedy]]]
-    new_chain = [chain_checkins, [[new_values, new_eval], [new_values_greedy, new_eval_greedy], [eval_blend_exec, eval_blend_check]]]
+    new_chain = [chain_checkins, [[new_values, new_eval], [new_values_greedy, new_eval_greedy], new_midpoint_evals]]
     return new_chain
 
 
-def runExtensionStage(stage, is_lower_bound, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, alpha, beta):
+def runExtensionStage(stage, is_lower_bound, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, midpoints):
     chains = []
     previous_chains = chains_list[stage - 1]
 
@@ -2103,7 +2149,7 @@ def runExtensionStage(stage, is_lower_bound, chains_list, all_chains, compMDPs, 
             if stage == 1 and k == tail[0][0]:
                 continue # don't duplicate recurring tail value (e.g. 23* and 233*)
             
-            new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k, alpha, beta)
+            new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k, midpoints)
             chains.append(new_chain)
             all_chains.append(new_chain)
     
@@ -2125,7 +2171,7 @@ def runExtensionStage(stage, is_lower_bound, chains_list, all_chains, compMDPs, 
     return all_chains
 
 
-def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, alpha, beta):
+def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
@@ -2149,7 +2195,7 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, tar
     l = 1
     
     for k in checkin_periods:
-        chain = createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k, alpha, beta)
+        chain = createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k, midpoints)
         chains_list[0].append(chain)
         all_chains.append(chain)
 
@@ -2173,9 +2219,9 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, tar
     for i in range(1, chain_length):
         l += 1
 
-        all_chains = runExtensionStage(i, True, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, alpha, beta)
+        all_chains = runExtensionStage(i, True, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, midpoints)
 
-        all_chains_upper = runExtensionStage(i, False, chains_list_upper, all_chains_upper, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, alpha, beta)
+        all_chains_upper = runExtensionStage(i, False, chains_list_upper, all_chains_upper, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, midpoints)
 
         if drawIntermediate:
             drawParetoStep(mdp, all_chains, all_chains_upper, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box)
@@ -2853,7 +2899,7 @@ def drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_s
 
 
 def runChains(grid, mdp, discount, discount_checkin, start_state, target_state, 
-    checkin_periods, chain_length, do_filter, margin, distName, startName, distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, alpha, beta):
+    checkin_periods, chain_length, do_filter, margin, distName, startName, distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints):
 
     title = distName[0].upper() + distName[1:]
 
@@ -2886,7 +2932,7 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
         TRUTH_COSTS=TRUTH_COSTS,
         name=name,
         title=title,
-        alpha=alpha, beta=beta)
+        midpoints=midpoints)
 
     numRemaining = len(start_state_costs) / 3 #because 3 points in each L
     numWouldBeTotal = pow(len(checkin_periods), chain_length)
@@ -2916,6 +2962,25 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
     print("All costs:",start_state_costs)
 
     return running_time, error, fractionTrimmed, error_upper
+
+
+def getAdjustedAlphaValue(alpha, scaling_factor):
+    if alpha >= 1:
+        return 1
+    # 0.5/0.5:
+    #(0.5x) = 0.5 (1-x) * scaling_factor
+    #(0.5 / scaling_factor + 0.5) x = 0.5
+    #x = 0.5 / (0.5 / scaling_factor + 0.5)
+
+    # 0.25/0.75:
+    #(0.75x) = 0.25 (1-x) * scaling_factor
+    #(0.75 / scaling_factor + 0.25) x = 0.25
+    #x = 0.25 / (0.75 / scaling_factor + 0.75)
+
+    beta = 1 - alpha
+
+    scaled_alpha = alpha / (beta / scaling_factor + beta)
+    return scaled_alpha
 
 
 def convertToGreedyMDP(grid, mdp): # bad
@@ -2959,7 +3024,7 @@ def convertCompToCheckinMDP(grid, compMDP, checkin_period, discount):
         
     return checkinMDP
 
-def blendMDPCosts(mdp1, mdp2, alpha, beta):
+def blendMDPCosts(mdp1, mdp2, alpha):
 
     blend = MDP([], [], {}, {}, [])
 
@@ -2974,7 +3039,7 @@ def blendMDPCosts(mdp1, mdp2, alpha, beta):
         blend.rewards[state] = {}
 
         for action in mdp1.rewards[state]:
-            blend.rewards[state][action] = alpha * mdp1.rewards[state][action] + beta * mdp2.rewards[state][action]
+            blend.rewards[state][action] = alpha * mdp1.rewards[state][action] + (1 - alpha) * mdp2.rewards[state][action]
         
     return blend
 
@@ -2986,21 +3051,71 @@ grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, ca
 # grid, mdp, discount, start_state = splitterGrid2(rows = 12)
 discount_checkin = discount
 
-# if True:
+if False:
 
-#     k = 3
-#     alpha = 0.000005
-#     beta = 1 - alpha
-#     compMDP = createCompositeMDP(mdp, discount, k)
-#     checkinMDP = convertCompToCheckinMDP(grid, compMDP, k, discount_checkin)
-#     blendedMDP = blendMDPCosts(compMDP, checkinMDP, alpha, beta)
+    scaling_factor = 9.69/1.47e6 # y / x
+    midpoints = [getAdjustedAlphaValue(i, scaling_factor) for i in np.arange(0.25, 1, 0.25)]
 
-#     discount_t = pow(discount, k)
-#     discount_c_t = pow(discount_checkin, k)
+    print(getAdjustedAlphaValue(i, scaling_factor))
 
-#     policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
-#     policy_greedy, values_greedy = linearProgrammingSolve(grid, checkinMDP, discount_c_t, restricted_action_set=None, is_negative=True)
-#     policy_blend, values_blend = linearProgrammingSolve(grid, blendedMDP, discount_t)
+    exit()
+
+    k = 4
+    # alpha = 0.000005
+    # beta = 1 - alpha
+    compMDP = createCompositeMDP(mdp, discount, k)
+    checkinMDP = convertCompToCheckinMDP(grid, compMDP, k, discount_checkin)
+
+    discount_t = pow(discount, k)
+    discount_c_t = pow(discount_checkin, k)
+
+    policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
+    policy_greedy, values_greedy = linearProgrammingSolve(grid, checkinMDP, discount_c_t, restricted_action_set=None, is_negative=True)
+    # policy_blend, values_blend = linearProgrammingSolve(grid, blendedMDP, discount_t)
+
+    eval_normal = policyEvaluation(checkinMDP, policy, discount_c_t)
+    eval_greedy = policyEvaluation(compMDP, policy_greedy, discount_t)
+
+
+    initialDistribution = dirac(mdp, start_state)
+    point1 = getStateDistributionParetoValues(mdp, (values, eval_normal), [initialDistribution])
+    point2 = getStateDistributionParetoValues(mdp, (eval_greedy, values_greedy), [initialDistribution])
+    print(point1, point2)
+
+    #scaling_factor = (8.476030558294275 - 6.868081239897704) / (1410952.6446555236 - 1076057.2978729124)
+    #scaling_factor = abs((point2[1] - point1[1]) / (point2[0] - point1[0]))
+    #scaling_factor = (abs(point2[1] / point2[0]) + abs(point1[1] / point1[0])) / 2
+    #print(scaling_factor)
+    
+    midpoints = [i for i in np.arange(0, 1e-5, 1e-7)]
+    #midpoints = [i for i in np.arange(0, 1, 0.25)]
+    #midpoints = [i for i in np.arange(0, 1, 0.01)]
+    midpoints.append(1)
+
+
+    file = open(f'output/alpha9.csv', "w")
+    file.write("alpha,scaled_alpha,execution,checkin\n")
+    for alpha in midpoints:
+        desired_value = alpha * point1[0] + (1-alpha) * point2[0]
+        desired_checkin = alpha * point1[1] + (1-alpha) * point2[1]
+
+        #scaling_factor = abs(desired_checkin / desired_value)
+
+        #midpoint_alpha = getAdjustedAlphaValue(alpha, scaling_factor)
+        midpoint_alpha = alpha
+        policy_blend = mixedPolicy(values, values_greedy, compMDP, checkinMDP, midpoint_alpha)
+
+        eval_blend_exec = policyEvaluation(compMDP, policy_blend, discount_t)
+        eval_blend_check = policyEvaluation(checkinMDP, policy_blend, discount_c_t)
+
+        point = (eval_blend_exec, eval_blend_check)
+        
+        vals = getStateDistributionParetoValues(mdp, point, [initialDistribution])
+        file.write(f"{alpha},{midpoint_alpha},{vals[0]},{vals[1]}\n")
+
+    file.close()
+
+    exit()
 
 
 #     v1 = np.array([values[s] for s in mdp.states])
@@ -3297,13 +3412,26 @@ if True:
         error = -1
         trimmed = 0
 
-        alpha = 0.000005
-        beta = 1-alpha
+        scaling_factor = 9.69/1.47e6 # y / x
+        # scaling_factor = (8.476030558294275 - 6.868081239897704) / (1410952.6446555236 - 1076057.2978729124)
+        
+        #alpha = 0.000006591793283#0.000005
+        #beta = 1-alpha
+        # midpoints = [
+        #     getAdjustedAlphaValue(0.75, scaling_factor),
+        #     getAdjustedAlphaValue(0.5, scaling_factor),
+        #     getAdjustedAlphaValue(0.25, scaling_factor)
+        # ]
+        #midpoints = [getAdjustedAlphaValue(i, scaling_factor) for i in np.arange(0.1, 1, 0.1)]
+        #midpoints = [getAdjustedAlphaValue(i, scaling_factor) for i in [0.25, 0.375, 0.5, 0.75]]
+        midpoints = [0.5]
+
+        print(midpoints)
         
         for i in range(repeats):
             running_time, error, trimmed, error_upper = runChains(
                 grid, mdp, discount, discount_checkin, start_state, target_state,
-                checkin_periods=[1, 2, 3, 4],
+                checkin_periods=[1, 2, 3],
                 chain_length=4,
                 do_filter = True,
                 margin = margin,
@@ -3315,7 +3443,7 @@ if True:
                 TRUTH = TRUTH_C4L4, 
                 TRUTH_COSTS = TRUTH_COSTS_C4L4,
                 drawIntermediate=True,
-                alpha=alpha, beta=beta)
+                midpoints = midpoints)
 
             running_time_avg += running_time
         running_time_avg /= repeats
