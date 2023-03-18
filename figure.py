@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 from matplotlib import rc
 import json
+from schedule import ScheduleBounds
 
 def translateLabel(label):
     star_index = label.index('*')
@@ -99,9 +100,14 @@ def drawLdominated(ax, points, color, bounding_box, face_color, x_offset=0, x_sc
 
     addXY([points[0][1][0], ymax], x, y, x_offset, x_scale)
     addXY(points[0][1], x, y, x_offset, x_scale)
-    addXY([max(points[0][1][0], points[2][1][0]), max(points[0][1][1], points[2][1][1])], x, y, x_offset, x_scale)
-    addXY(points[2][1], x, y, x_offset, x_scale)
-    addXY([xmax, points[2][1][1]], x, y, x_offset, x_scale)
+    
+    # addXY([max(points[0][1][0], points[2][1][0]), max(points[0][1][1], points[2][1][1])], x, y, x_offset, x_scale)
+    # addXY(points[2][1], x, y, x_offset, x_scale)
+    for i in range(0, len(points)-1):
+        addXY([max(points[i][1][0], points[i+1][1][0]), max(points[i][1][1], points[i+1][1][1])], x, y, x_offset, x_scale)
+        addXY(points[i+1][1], x, y, x_offset, x_scale)
+    
+    addXY([xmax, points[-1][1][1]], x, y, x_offset, x_scale)
     addXY([xmax, ymax], x, y, x_offset, x_scale)
 
     ax.plot(x, y, c=color, linestyle="solid", linewidth=0.33, alpha=0.05)
@@ -162,13 +168,8 @@ def scatter(ax, points, doLabel, color, lcolor, arrows=False, x_offset = 0, x_sc
                     color=lcolor,fontsize=12)
 
 
-def drawParetoFront(points, indices, is_efficient, realizable_front, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
+def setPlotStyle():
     plt.style.use('seaborn-whitegrid')
-
-    if prints:
-        print("\n-----------\nDrawing",name,"\n-----------\n")
-
-    arrows = True
 
     font = FontProperties()
     font.set_family('serif')
@@ -181,46 +182,73 @@ def drawParetoFront(points, indices, is_efficient, realizable_front, true_front,
     plt.rcParams["text.usetex"] = True
     # plt.rcParams['font.weight'] = 'bold'
 
+    return font
+
+
+def finishPlot(font, name, bounding_box, x_offset, x_scale):
+    plt.xlabel(r"\textbf{Execution Cost}", fontproperties=font, fontweight='bold')
+    plt.ylabel(r"\textbf{Checkin Cost}", fontproperties=font, fontweight='bold')
+    #plt.title(title)
+
+    plt.xlim((bounding_box[0] + x_offset) * x_scale)
+    plt.ylim(bounding_box[1])
+
+    plt.gcf().set_size_inches(10, 10)
+    plt.savefig(f'output/{name}.pdf', format="pdf",  pad_inches=0.2, dpi=600)
+    # plt.savefig(f'output/{name}.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
+    # plt.show()
+
+
+def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
+    
+    if prints:
+        print("\n-----------\nDrawing",name,"\n-----------\n")
+
+    arrows = True
+    
+    font = setPlotStyle()
+
     # points is a list of point tuples, each tuple is: (string name of schedule, [execution cost, checkin cost])
     # each schedule has 3 points (pi*, pi^c, and bottom corner of L)
     # all points from all schedules are together in 1D points array
     # indices array gives indices of schedule's points in points array for each schedule
 
-    points_nondominated = []
-    points_dominated = []
-    for i in range(len(points)):
+    scheds_nondominated = []
+    scheds_dominated = []
+    for i in range(len(schedules)):
         if is_efficient[i]:
-            points_nondominated.append(points[i])
+            scheds_nondominated.append(schedules[i])
         else:
-            points_dominated.append(points[i])
+            scheds_dominated.append(schedules[i])
 
 
-    num_efficient_schedules = 0
-    is_efficient_schedules = []
-    for i in range(len(indices)):
-        point_indices = indices[i][1]
+    # num_efficient_schedules = 0
+    # is_efficient_schedules = []
+    # for i in range(len(indices)):
+    #     point_indices = indices[i][1]
 
-        efficient = False
-        for j in point_indices:
-            if is_efficient[j]: # at least one of the 3 points are in the front, so the schedule is in the front
-                efficient = True
-                num_efficient_schedules += 1
-                break
-        is_efficient_schedules.append(efficient)
+    #     efficient = False
+    #     for j in point_indices:
+    #         if is_efficient[j]: # at least one of the 3 points are in the front, so the schedule is in the front
+    #             efficient = True
+    #             num_efficient_schedules += 1
+    #             break
+    #     is_efficient_schedules.append(efficient)
 
-    points_nondominated.sort(key = lambda point: point[1][0])
+    # points_nondominated.sort(key = lambda point: point[1][0])
+    
+    if prints:
+        print("Non-dominated schedules:")
+        for sched in scheds_nondominated:
+            print("  ", sched.name)
 
     if prints:
-        print("Non-dominated points:")
-        for point in points_nondominated:
-            print("  ", point[0])
+        print(len(scheds_nondominated),"dominated schedules out of",len(schedules),"|",len(scheds_nondominated),"non-dominated")
+        # print(len(indices)-num_efficient_schedules,"dominated schedules out of",len(indices),"|",num_efficient_schedules,"non-dominated")
 
     if prints:
-        print(len(points_dominated),"dominated points out of",len(points),"|",len(points_nondominated),"non-dominated")
-        print(len(indices)-num_efficient_schedules,"dominated schedules out of",len(indices),"|",num_efficient_schedules,"non-dominated")
-
-    if prints:
-        print("Pareto front:",points_nondominated)
+        print("Pareto front:",scheds_nondominated)
+        print("Optimistic front:",optimistic_front)
         print("Realizable front:",realizable_front)
     
     fig, ax = plt.subplots()
@@ -233,10 +261,18 @@ def drawParetoFront(points, indices, is_efficient, realizable_front, true_front,
     #     manhattan_lines(ax, true_front, color="green", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
     #     scatter(ax, true_front, doLabel=False, color="green", lcolor="green", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
+    if true_front is not None:
+        truth_optimistic_front, truth_realizable_front = true_front
+        if truth_optimistic_front is not None:
+            manhattan_lines(ax, truth_optimistic_front, color="#c7e6d0", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+        if truth_realizable_front is not None:
+            manhattan_lines(ax, truth_realizable_front, color="#33ab55", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed")
+            # scatter(ax, realizable_front, doLabel=True, color="blue", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
+
     # scatter(ax, points_dominated, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
     
     # draw optimistic front
-    manhattan_lines(ax, points_nondominated, color="#e6c7c7", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+    manhattan_lines(ax, optimistic_front, color="#e6c7c7", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
     #scatter(ax, points_nondominated, doLabel=True, color="#aa3333", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
 
     # draw realizable front
@@ -247,38 +283,78 @@ def drawParetoFront(points, indices, is_efficient, realizable_front, true_front,
 
 
     # earlier draws (usually) are in the back
-    for i in range(len(is_efficient_schedules)):
-        if not is_efficient_schedules[i]: # dominated schedule
-            schedule_points = []
-            for j in indices[i][1]:
-                schedule_points.append(points[j])
+    for sched in scheds_dominated:
+        schedule_points = []
+        # schedule_points.append([sched.name, sched.upper_bound[0]])
+        # for b in sched.lower_bound:
+        #     schedule_points.append([sched.name, b])
+        # schedule_points.append([sched.name, sched.upper_bound[-1]])
+        for b in sched.upper_bound:
+            schedule_points.append([sched.name, b])
 
-            drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
-            #scatter(ax, schedule_points, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+        drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
+        #scatter(ax, schedule_points, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
-    for i in range(len(is_efficient_schedules)):
-        if is_efficient_schedules[i]: # non-dominated schedule
-            schedule_points = []
-            for j in indices[i][1]:
-                schedule_points.append(points[j])
-        
-            #drawL(ax, schedule_points, bounding_box=bounding_box, color="#ff2222", face_color="#ff2222", x_offset=x_offset, x_scale=x_scale)
-            #scatter(ax, schedule_points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
-
-
+    for sched in scheds_nondominated:
+        schedule_points = []
+        schedule_points.append([sched.name, sched.upper_bound[0]])
+        for b in sched.lower_bound:
+            schedule_points.append([sched.name, b])
+        schedule_points.append([sched.name, sched.upper_bound[-1]])
     
-    plt.xlabel(r"\textbf{Execution Cost}", fontproperties=font, fontweight='bold')
-    plt.ylabel(r"\textbf{Checkin Cost}", fontproperties=font, fontweight='bold')
-    #plt.title(title)
+        #drawL(ax, schedule_points, bounding_box=bounding_box, color="#ff2222", face_color="#ff2222", x_offset=x_offset, x_scale=x_scale)
+        #scatter(ax, schedule_points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
 
-    plt.xlim((bounding_box[0] + x_offset) * x_scale)
-    plt.ylim(bounding_box[1])
+    finishPlot(font, name, bounding_box, x_offset, x_scale)
 
-    plt.gcf().set_size_inches(10, 10)
-    plt.savefig(f'output/{name}.pdf', format="pdf",  pad_inches=0.2, dpi=600)
-    # plt.savefig(f'output/{name}.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
-    # plt.show()
+
+def drawParetoFrontSuperimposed(fronts, true_fronts, true_costs, colors, name, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
+    plt.style.use('seaborn-whitegrid')
+
+    if prints:
+        print("\n-----------\nDrawing",name,"\n-----------\n")
+
+    arrows = True
+
+    font = setPlotStyle()
+    
+    fig, ax = plt.subplots()
+
+    # if true_front is not None:
+    #     manhattan_lines(ax, true_front, color="green", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+    #     scatter(ax, true_front, doLabel=False, color="green", lcolor="green", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+
+    for i in range(len(fronts)):
+        front_lower, front_upper = fronts[i]
+        # true_front_lower, true_front_upper = true_fronts[i]
+        (color_lower, color_upper) = colors[i]
+
+        # if i == len(fronts)-1:
+        #     scatter(ax, chains_dominated, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+
+        if i == len(fronts)-1:
+            manhattan_lines(ax, front_lower, color=color_lower, bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+        manhattan_lines(ax, front_upper, color=color_upper, bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed")
+        
+        if i == len(fronts)-1:
+            scatter(ax, front_upper, doLabel=True, color=color_upper, lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
+    
+    
+    # if true_costs is not None:
+    #     truth_schedules, truth_nondominated, truth_dominated = true_costs
+    #     for sched in truth_dominated:
+    #         schedule_points = []
+    #         for b in sched.upper_bound:
+    #             schedule_points.append([sched.name, b])
+
+    #         drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
+    #         #scatter(ax, schedule_points, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+    #     # scatter(ax, true_costs, doLabel=False, color="gainsboro", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+
+
+    finishPlot(font, name, bounding_box, x_offset, x_scale)
+
 
 
 def loadDataChains(filename):
@@ -286,14 +362,31 @@ def loadDataChains(filename):
         jsonStr = file.read()
         obj = json.loads(jsonStr)
 
-        truth = obj['Truth'] if 'Truth' in obj else None
-        truth_costs = obj['Truth Costs'] if 'Truth Costs' in obj else None
+        # truth = obj['Truth'] if 'Truth' in obj else None
+        # truth_costs = obj['Truth Costs'] if 'Truth Costs' in obj else None
         realizable_front = obj['Realizable Front'] if 'Realizable Front' in obj else None
+        optimistic_front = obj['Optimistic Front'] if 'Optimistic Front' in obj else None
+        
+        schedules = [ScheduleBounds(sched) for sched in obj['Schedules']]
 
-        return (obj['Points'], obj['Indices'], obj['Efficient'], realizable_front, truth, truth_costs)
+        return (schedules, obj['Efficient'], optimistic_front, realizable_front)#, truth, truth_costs)
 
 
+def loadTruth(filename):
+    if filename is None:
+        return (None, None, None, None)
 
+    truth_schedules, is_efficient, truth_optimistic_front, truth_realizable_front = loadDataChains(filename)
+
+    scheds_nondominated = []
+    scheds_dominated = []
+    for i in range(len(truth_schedules)):
+        if is_efficient[i]:
+            scheds_nondominated.append(truth_schedules[i])
+        else:
+            scheds_dominated.append(truth_schedules[i])
+
+    return ((truth_optimistic_front, truth_realizable_front), (truth_schedules, scheds_nondominated, scheds_dominated))
 
 
 if __name__ == "__main__":
@@ -302,16 +395,20 @@ if __name__ == "__main__":
     #bounding_box = np.array([[-1.55e6, -1.25e6], [0.0001, 30]])
     #bounding_box = np.array([[-1.50e6, -1.10e6+15], [0.0000+3.5, 25+1.5]])
     #bounding_box = np.array([[-1.50e6, -1.40e6+15], [0.0000+3.5, 25+1.5]])
-    bounding_box = np.array([[-1.560e6, -1.10e6+15], [0.0000+3.5, 25+1.5]])
+    # bounding_box = np.array([[-1.560e6, -1.10e6+15], [0.0000+3.5, 25+1.5]])
+    #bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
+    bounding_box = np.array([[-1.56e6, -1e6], [0.0001, 30]])
 
     x_offset = 1.56e6
     x_scale = 1/1000
 
+    truth_name = "pareto-c4-l4-truth"
+
     names = [
-        "pareto-c4-l4-uniform-filtered-margin0.040-step1",
-        "pareto-c4-l4-uniform-filtered-margin0.040-step2",
-        "pareto-c4-l4-uniform-filtered-margin0.040-step3",
-        "pareto-c4-l4-uniform-filtered-margin0.040-step4",
+        "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step1",
+        "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step2",
+        "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step3",
+        "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step4",
     ]
 
     label_offsets = {
@@ -320,9 +417,32 @@ if __name__ == "__main__":
         # "2232121*": (-10, 0),
     }
 
-    for name in names:
-        points, indices, is_efficient, realizable_front, truth, truth_costs = loadDataChains(name)
-        drawParetoFront(points, indices, is_efficient, realizable_front, 
-            true_front = None, #truth, 
-            true_costs = None, #truth_costs, 
-            name=name, title="", bounding_box=bounding_box, prints=True, x_offset=x_offset, x_scale=x_scale, loffsets=label_offsets)
+    true_fronts, truth_schedules = loadTruth(truth_name)
+
+    superimposed = True
+
+    if not superimposed:
+        for name in names:
+            schedules, is_efficient, optimistic_front, realizable_front = loadDataChains(name)
+            drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front, 
+                true_front = true_fronts, #truth, 
+                true_costs = truth_schedules, #truth_costs, 
+                name=name, title="", bounding_box=bounding_box, prints=False, x_offset=x_offset, x_scale=x_scale, loffsets=label_offsets)
+    else:
+        colors = [
+            ("#e6c7c7", "#aa3333"), #red
+            ("#e6e6c8", "#abab33"), #yellow
+            ("#c7e6d0", "#33ab55"), #green
+            ("#c8c9e6", "#3339ab") #blue
+        ]
+        
+        outputName = "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-steps"
+
+        fronts = []
+        for name in names:
+            schedules, is_efficient, optimistic_front, realizable_front = loadDataChains(name)
+            fronts.append((optimistic_front, realizable_front))
+
+        drawParetoFrontSuperimposed(fronts, 
+            true_fronts, truth_schedules, colors, 
+            name=outputName, bounding_box=bounding_box, prints=False, x_offset=x_offset, x_scale=x_scale, loffsets=label_offsets)
