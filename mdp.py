@@ -3442,7 +3442,7 @@ if True:
         distStart.append(1 if i == start_state_index else 0)
     # distributions.append(distStart)
 
-    # distributions.append(uniform(mdp))
+    distributions.append(uniform(mdp))
     # distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
     # distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
     # distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
@@ -3468,14 +3468,17 @@ if True:
     # margins = np.arange(0, 0.0501, 0.005)
     # margins = np.arange(0.055, 0.1001, 0.005)
     # margins = np.arange(0.01, 0.0251, 0.005)
-    margins = [0.04]
-    # margins = [0]
+    # margins = [0.04]
+    margins = [0]
     # margins = [0.015]
+
+    lengths = [9]#[1, 2, 3, 4, 5, 6, 7]
+
     repeats = 1
     results = []
 
-    truth_name = "pareto-c4-l4-truth"
-    true_fronts, truth_schedules = loadTruth(truth_name)
+    # truth_name = "pareto-c4-l4-truth"
+    # true_fronts, truth_schedules = loadTruth(truth_name)
 
     scaling_factor = 9.69/1.47e6 # y / x
     # scaling_factor = (8.476030558294275 - 6.868081239897704) / (1410952.6446555236 - 1076057.2978729124)
@@ -3490,49 +3493,60 @@ if True:
     #midpoints = [getAdjustedAlphaValue(i, scaling_factor) for i in np.arange(0.1, 1, 0.1)]
     #midpoints = [getAdjustedAlphaValue(i, scaling_factor) for i in [0.25, 0.375, 0.5, 0.75]]
     # midpoints = [0.25, 0.375, 0.5, 0.75]
-    midpoints = []
+    # midpoints = []
+    midpoints = [0.2, 0.4, 0.6, 0.8]
     n = 10
     # midpoints = [1.0/(2**x) for x in range(n-1,0,-1)]
     # midpoints = list(np.arange(0.1, 1, 0.1))
     midpoints = [getAdjustedAlphaValue(m, scaling_factor) for m in midpoints]
 
-    alphas_name = "_no-alpha_"
+    # alphas_name = "_no-alpha_"
+    # alphas_name = "_4alpha_"
+    alphas_name = "_4e-alpha_"
+    # alphas_name = "_10alpha_"
 
     print(midpoints)
 
-    for margin in margins:
-        print("\n\n  Running margin",margin,"\n\n")
+    for length in lengths:
+        print("\n\n  Running length",length,"\n\n")
 
-        running_time_avg = 0
-        error = -1
-        trimmed = 0
+        truth_name = None# f"pareto-c4-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
+        # truth_name = f"pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
+        true_fronts, truth_schedules = loadTruth(truth_name)
 
-        for i in range(repeats):
-            running_time, error, trimmed = runChains(
-                grid, mdp, discount, discount_checkin, start_state, target_state,
-                checkin_periods=[1, 2, 3, 4],
-                chain_length=4,
-                do_filter = True,
-                margin = margin,
-                distName = 'uniform' + alphas_name,
-                startName = '',
-                distributions = distributions, 
-                initialDistribution = initialDistribution,
-                bounding_box = bounding_box, 
-                TRUTH = true_fronts,#TRUTH_C4L4, 
-                TRUTH_COSTS = truth_schedules,#TRUTH_COSTS_C4L4,
-                drawIntermediate=True,
-                midpoints = midpoints)
+        for margin in margins:
+            print("\n\n  Running margin",margin,"\n\n")
 
-            running_time_avg += running_time
-        running_time_avg /= repeats
+            running_time_avg = 0
+            error = -1
+            trimmed = 0
 
-        quality = (1 - error) * 100
-        quality_upper = (1 - error) * 100
-        results.append((margin, running_time_avg, quality, trimmed, quality_upper))
-        print("\nRESULTS:\n")
-        for r in results:
-            print(str(r[0])+","+str(r[1])+","+str(r[2])+","+str(r[3]))
+            for i in range(repeats):
+                running_time, error, trimmed = runChains(
+                    grid, mdp, discount, discount_checkin, start_state, target_state,
+                    checkin_periods=[1, 2, 3, 4],
+                    chain_length=length,
+                    do_filter = True,
+                    margin = margin,
+                    distName = 'mixed' + alphas_name,
+                    startName = '',
+                    distributions = distributions, 
+                    initialDistribution = initialDistribution,
+                    bounding_box = bounding_box, 
+                    TRUTH = true_fronts,#TRUTH_C4L4, 
+                    TRUTH_COSTS = truth_schedules,#TRUTH_COSTS_C4L4,
+                    drawIntermediate=False,
+                    midpoints = midpoints)
+
+                running_time_avg += running_time
+            running_time_avg /= repeats
+
+            quality = (1 - error) * 100
+            quality_upper = (1 - error) * 100
+            results.append((margin, running_time_avg, quality, trimmed, quality_upper))
+            print("\nRESULTS:\n")
+            for r in results:
+                print(str(r[0])+","+str(r[1])+","+str(r[2])+","+str(r[3]))
 
 
 # runCheckinSteps(1, 20)

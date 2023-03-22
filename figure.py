@@ -243,7 +243,7 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
             print("  ", sched.name)
 
     if prints:
-        print(len(scheds_nondominated),"dominated schedules out of",len(schedules),"|",len(scheds_nondominated),"non-dominated")
+        print(len(scheds_dominated),"dominated schedules out of",len(schedules),"|",len(scheds_nondominated),"non-dominated")
         # print(len(indices)-num_efficient_schedules,"dominated schedules out of",len(indices),"|",num_efficient_schedules,"non-dominated")
 
     if prints:
@@ -302,11 +302,13 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
             schedule_points.append([sched.name, b])
         schedule_points.append([sched.name, sched.upper_bound[-1]])
     
+        # drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
         #drawL(ax, schedule_points, bounding_box=bounding_box, color="#ff2222", face_color="#ff2222", x_offset=x_offset, x_scale=x_scale)
         #scatter(ax, schedule_points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
 
     finishPlot(font, name, bounding_box, x_offset, x_scale)
+    plt.close(fig)
 
 
 def drawParetoFrontSuperimposed(fronts, true_fronts, true_costs, colors, name, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
@@ -354,6 +356,7 @@ def drawParetoFrontSuperimposed(fronts, true_fronts, true_costs, colors, name, b
 
 
     finishPlot(font, name, bounding_box, x_offset, x_scale)
+    plt.close(fig)
 
 
 
@@ -374,7 +377,7 @@ def loadDataChains(filename):
 
 def loadTruth(filename):
     if filename is None:
-        return (None, None, None, None)
+        return (None, None)
 
     truth_schedules, is_efficient, truth_optimistic_front, truth_realizable_front = loadDataChains(filename)
 
@@ -402,13 +405,19 @@ if __name__ == "__main__":
     x_offset = 1.56e6
     x_scale = 1/1000
 
-    truth_name = "pareto-c4-l4-truth"
+    truth_name = None#"pareto-c4-l4-truth"
 
     names = [
-        "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step1",
-        "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step2",
-        "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step3",
-        "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step4",
+        # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step1",
+        # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step2",
+        # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step3",
+        # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step4",
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step1",
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step2",
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step4",
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step8",
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step14",
+        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
     ]
 
     label_offsets = {
@@ -419,11 +428,46 @@ if __name__ == "__main__":
 
     true_fronts, truth_schedules = loadTruth(truth_name)
 
-    superimposed = True
+    superimposed = False
 
     if not superimposed:
         for name in names:
             schedules, is_efficient, optimistic_front, realizable_front = loadDataChains(name)
+
+            print("Total schedules:", len(schedules))
+            n = 0
+            d = 0
+            for i in range(len(is_efficient)):
+                if is_efficient[i]:
+                    n += 1
+                else:
+                    d += 1
+            print("Total non-dominated:", n)
+            print("Total dominated:", d)
+
+            scheds = set()
+            unique = 0
+            scheds2 = set()
+            unique2 = 0
+            unique3 = 0
+
+            for point in optimistic_front:
+                if point[0] not in scheds:
+                    scheds.add(point[0])
+                    unique += 1
+                    unique3 += 1
+            for point in realizable_front:
+                if point[0] not in scheds2:
+                    scheds2.add(point[0])
+                    unique2 += 1
+                if point[0] not in scheds:
+                    scheds.add(point[0])
+                    unique3 += 1
+
+            print("Unique schedules in lower front:", unique)
+            print("Unique schedules in upper front:", unique2)
+            print("Unique schedules overall:", unique3)
+
             drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front, 
                 true_front = true_fronts, #truth, 
                 true_costs = truth_schedules, #truth_costs, 
