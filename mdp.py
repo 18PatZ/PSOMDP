@@ -1211,7 +1211,9 @@ def splitterGrid2(rows = 8, discount = math.sqrt(0.9)):
     return grid, mdp, discount, start_state
 
 
-def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False, bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None):
+def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, 
+        drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False, 
+        bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None, outputDir="output"):
     policy = None
     values = None
     q_values = None
@@ -1288,7 +1290,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
         print("Start state value:",values[start_state])
 
         if drawPolicy:
-            draw(grid, compMDP, values, policy, True, False, "output/policy-"+outputPrefix+str(checkin_period)+("-vi" if not doLinearProg else "-lp"))
+            draw(grid, compMDP, values, policy, True, False, f"{outputDir}/policy-"+outputPrefix+str(checkin_period)+("-vi" if not doLinearProg else "-lp"))
     else:
         compMDP, policy, values, q_values, ratios, upperBounds, lowerBounds, pruned, compMDPs = branchAndBound(grid, mdp, discount, checkin_period, 1e-20, int(1e4), doLinearProg=doLinearProg, greedy=bnbGreedy)
         print(policy)
@@ -1309,10 +1311,10 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, draw
 
         if drawIterations:
             for i in range(0, checkin_period-1):
-                drawBNBIteration(grid, compMDPs[i], ratios, upperBounds, lowerBounds, pruned, i, "output/policy-"+outputPrefix+str(checkin_period)+"-"+suffix+"-"+str(i+1))
+                drawBNBIteration(grid, compMDPs[i], ratios, upperBounds, lowerBounds, pruned, i, f"{outputDir}/policy-"+outputPrefix+str(checkin_period)+"-"+suffix+"-"+str(i+1))
 
         if drawPolicy:
-            draw(grid, compMDP, values, policy, True, False, "output/policy-"+outputPrefix+str(checkin_period)+"-"+suffix+"-f")
+            draw(grid, compMDP, values, policy, True, False, f"{outputDir}/policy-"+outputPrefix+str(checkin_period)+"-"+suffix+"-f")
 
     # if not os.path.exists("output/"):
     #     os.makedirs("output/")
@@ -1530,7 +1532,7 @@ def makeTable(short_names, diffs):
                         loc='center', 
                         cellColours=colours)
 
-def visualizeActionSimilarity(mdp, diffs, state, midfix=""):
+def visualizeActionSimilarity(mdp, diffs, state, midfix="", outputDir="output"):
     print("State:", state)
     cost_diffs, transition_diffs, total_diffs = diffs[state]
 
@@ -1542,13 +1544,13 @@ def visualizeActionSimilarity(mdp, diffs, state, midfix=""):
         short_names.append(short_name)
 
     makeTable(short_names, cost_diffs)
-    plt.savefig(f'output/diff{midfix}-cost.png', bbox_inches='tight')
+    plt.savefig(f'{outputDir}/diff{midfix}-cost.png', bbox_inches='tight')
 
     makeTable(short_names, transition_diffs)
-    plt.savefig(f'output/diff{midfix}-transition.png', bbox_inches='tight')
+    plt.savefig(f'{outputDir}/diff{midfix}-transition.png', bbox_inches='tight')
 
     makeTable(short_names, total_diffs)
-    plt.savefig(f'output/diff{midfix}-total.png', bbox_inches='tight')
+    plt.savefig(f'{outputDir}/diff{midfix}-total.png', bbox_inches='tight')
 
     # plt.show()
 
@@ -1591,7 +1593,7 @@ def blendMDP(mdp1, mdp2, stepsFromState, stateReference):
     return mdp
         
 
-def runTwoCadence(checkin1, checkin2):
+def runTwoCadence(checkin1, checkin2, outputDir):
 
     n1 = 3
     grid, mdp, discount, start_state = corridorTwoCadence(n1=n1, n2=n1, cadence1=checkin1, cadence2=checkin2)
@@ -1651,7 +1653,7 @@ def runTwoCadence(checkin1, checkin2):
 
     print("Start state value:",bestValues[start_state])
 
-    draw(grid, bestBlendedMDP, bestValues, bestPolicy, True, False, "output/policy-comp-"+str(checkin1)+"v"+str(checkin2)+"-lp")
+    draw(grid, bestBlendedMDP, bestValues, bestPolicy, True, False, f"{outputDir}/policy-comp-"+str(checkin1)+"v"+str(checkin2)+"-lp")
 
     return bestValues[start_state], elapsed
 
@@ -2002,7 +2004,7 @@ def chains_to_str(chains):
     return text
     
 
-def drawParetoStep(mdp, schedules, initialDistribution, TRUTH, TRUTH_COSTS, plotName, title, stepLen, bounding_box):
+def drawParetoStep(mdp, schedules, initialDistribution, TRUTH, TRUTH_COSTS, plotName, title, stepLen, bounding_box, outputDir):
 
     plotName += "-step" + str(stepLen)
     title += " Length " + str(stepLen)
@@ -2021,8 +2023,8 @@ def drawParetoStep(mdp, schedules, initialDistribution, TRUTH, TRUTH_COSTS, plot
     error = 0 if TRUTH is None else calculateError((front_lower, front_upper), TRUTH, bounding_box)
     print("Error from true Pareto:",error)
 
-    saveDataChains(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + plotName)
-    drawParetoFront(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False)
+    saveDataChains(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + plotName, outputDir)
+    drawParetoFront(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + plotName, title, bounding_box, prints=False, outputDir=outputDir)
 
 
 def mixedPolicy(values1, values2, compMDP1, compMDP2, alpha, discount):
@@ -2200,7 +2202,9 @@ def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompM
     return all_chains
 
 
-def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints):
+def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, 
+                         checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, 
+                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
@@ -2237,7 +2241,7 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, tar
 
 
     if drawIntermediate:
-        drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box)
+        drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir)
 
 
     print("--------")
@@ -2251,7 +2255,7 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, tar
         all_chains = runExtensionStage(mdp, i, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, midpoints)
 
         if drawIntermediate:
-            drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box)
+            drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir)
 
         print("--------")
         print(len(all_chains),"current schedules")
@@ -2603,7 +2607,7 @@ def areaUnderFront(front, bounding_box):
     
     return areaUnderPareto(front_normalized)
 
-def saveDataChains(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, name):
+def saveDataChains(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, name, outputDir):
     sched_data = [sched.to_arr() for sched in sched_bounds]
     data = {'Schedules': sched_data, 'Efficient': is_efficient, 'Optimistic Front': front_lower, 'Realizable Front': front_upper}
     # if TRUTH is not None:
@@ -2612,7 +2616,7 @@ def saveDataChains(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, 
     #     data['Truth Costs'] = TRUTH_COSTS
     jsonStr = json.dumps(data, indent=4)
     
-    with open(f'output/data/{name}.json', "w") as file:
+    with open(f'{outputDir}/data/{name}.json', "w") as file:
         file.write(jsonStr)
 
 # def loadDataChains(filename):
@@ -2730,7 +2734,7 @@ def saveDataChains(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, 
 
 
 
-def drawChainsParetoFrontSuperimposed(stuffs, true_front, true_costs, name, bounding_box, x_offset=0, x_scale=1, loffsets={}):
+def drawChainsParetoFrontSuperimposed(stuffs, true_front, true_costs, name, bounding_box, x_offset=0, x_scale=1, loffsets={}, outputDir="output"):
     plt.style.use('seaborn-whitegrid')
 
     arrows = True
@@ -2785,13 +2789,13 @@ def drawChainsParetoFrontSuperimposed(stuffs, true_front, true_costs, name, boun
     plt.ylim(bounding_box[1])
 
     plt.gcf().set_size_inches(10, 7)
-    plt.savefig(f'output/{name}.pdf', format="pdf", bbox_inches='tight', pad_inches=0.2, dpi=300)
+    plt.savefig(f'{outputDir}/{name}.pdf', format="pdf", bbox_inches='tight', pad_inches=0.2, dpi=300)
     # plt.savefig(f'output/{name}.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
     # plt.savefig(f'output/pareto-{name}.svg', bbox_inches='tight', pad_inches=0.5, dpi=300, format="svg")
     # plt.show()
 
 
-def drawCompares(data):
+def drawCompares(data, outputDir="output"):
     plt.style.use('seaborn-whitegrid')
 
     fig, ax = plt.subplots()
@@ -2802,7 +2806,7 @@ def drawCompares(data):
     plt.ylabel("Error (%)")
 
     plt.gcf().set_size_inches(10, 7)
-    plt.savefig(f'output/pareto-compare.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
+    plt.savefig(f'{outputDir}/pareto-compare.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
     plt.show()
 
 
@@ -2985,7 +2989,8 @@ def getData(mdp, schedules, initialDistribution):
 
 
 def runChains(grid, mdp, discount, discount_checkin, start_state, target_state, 
-    checkin_periods, chain_length, do_filter, margin, distName, startName, distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints):
+    checkin_periods, chain_length, do_filter, margin, distName, startName, 
+    distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints, outputDir="output"):
         
     midpoints.sort(reverse=True)
 
@@ -3020,7 +3025,8 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
         TRUTH_COSTS=TRUTH_COSTS,
         name=name,
         title=title,
-        midpoints=midpoints)
+        midpoints=midpoints, 
+        outputDir=outputDir)
 
     numRemaining = len(schedules)# / 3 #because 3 points in each L
     numWouldBeTotal = pow(len(checkin_periods), chain_length)
@@ -3042,8 +3048,8 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
     error = 0 if TRUTH is None else calculateError((front_lower, front_upper), TRUTH, bounding_box)
     print("Error from true Pareto:",error)
 
-    saveDataChains(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + name)
-    drawParetoFront(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + name, title, bounding_box, prints=False)
+    saveDataChains(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + name, outputDir)
+    drawParetoFront(sched_bounds, is_efficient, front_lower, front_upper, TRUTH, TRUTH_COSTS, "pareto-" + name, title, bounding_box, prints=False, outputDir=outputDir)
 
     # print("All costs:",start_state_costs)
 

@@ -1,3 +1,7 @@
+import sys
+ 
+# adding above folder to the system path
+sys.path.insert(0, '../')
 from mdp import *
 
 # start = time.time()
@@ -382,7 +386,7 @@ if True:
 
         truth_name = f"pareto-c4-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
         # truth_name = f"pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
-        true_fronts, truth_schedules = loadTruth(truth_name)
+        true_fronts, truth_schedules = loadTruth(truth_name, outputDir="../output")
 
         for margin in margins:
             print("\n\n  Running margin",margin,"\n\n")
@@ -406,7 +410,8 @@ if True:
                     TRUTH = true_fronts,#TRUTH_C4L4, 
                     TRUTH_COSTS = truth_schedules,#TRUTH_COSTS_C4L4,
                     drawIntermediate=True,
-                    midpoints = midpoints)
+                    midpoints = midpoints, 
+                    outputDir="../output")
 
                 running_time_avg += running_time
             running_time_avg /= repeats

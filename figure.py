@@ -185,21 +185,25 @@ def setPlotStyle():
     return font
 
 
-def finishPlot(font, name, bounding_box, x_offset, x_scale):
+def finishPlot(font, name, bounding_box, x_offset, x_scale, outputDir="output"):
     plt.xlabel(r"\textbf{Execution Cost}", fontproperties=font, fontweight='bold')
     plt.ylabel(r"\textbf{Checkin Cost}", fontproperties=font, fontweight='bold')
     #plt.title(title)
-
+    
     plt.xlim((bounding_box[0] + x_offset) * x_scale)
     plt.ylim(bounding_box[1])
 
-    plt.gcf().set_size_inches(10, 10)
-    plt.savefig(f'output/{name}.pdf', format="pdf",  pad_inches=0.2, dpi=600)
+    #plt.gcf().set_size_inches(10, 10)
+    plt.gcf().set_size_inches(10, 7)
+    plt.subplots_adjust(top=0.99, right=0.99)
+    #plt.savefig(f'output/{name}.pdf', format="pdf",  pad_inches=0.2, dpi=600)
+    plt.savefig(f'{outputDir}/{name}.pdf', format="pdf",  pad_inches=0.0, dpi=600)
     # plt.savefig(f'output/{name}.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
     # plt.show()
 
 
-def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front, true_front, true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
+def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front, true_front, 
+                    true_costs, name, title, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}, outputDir="output"):
     
     if prints:
         print("\n-----------\nDrawing",name,"\n-----------\n")
@@ -278,9 +282,12 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
     # draw realizable front
     if realizable_front is not None:
         manhattan_lines(ax, realizable_front, color="#aa3333", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed")
+        # manhattan_lines(ax, realizable_front, color="#aa3333", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#c7e6d0")
         scatter(ax, realizable_front, doLabel=True, color="blue", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
 
-
+    # if true_front is not None and truth_realizable_front is not None:
+    #     manhattan_lines(ax, truth_realizable_front, color="#33ab55", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed")
+    # manhattan_lines(ax, realizable_front, color="#aa3333", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillabove=False)
 
     # earlier draws (usually) are in the back
     for sched in scheds_dominated:
@@ -292,7 +299,7 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
         for b in sched.upper_bound:
             schedule_points.append([sched.name, b])
 
-        drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
+        # drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
         #scatter(ax, schedule_points, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
     for sched in scheds_nondominated:
@@ -307,11 +314,12 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
         #scatter(ax, schedule_points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
 
-    finishPlot(font, name, bounding_box, x_offset, x_scale)
+    finishPlot(font, name, bounding_box, x_offset, x_scale, outputDir)
     plt.close(fig)
 
 
-def drawParetoFrontSuperimposed(fronts, true_fronts, true_costs, colors, name, bounding_box, prints, x_offset=0, x_scale=1, loffsets={}):
+def drawParetoFrontSuperimposed(fronts, true_fronts, true_costs, colors, name, 
+                                bounding_box, prints, x_offset=0, x_scale=1, loffsets={}, outputDir="output"):
     plt.style.use('seaborn-whitegrid')
 
     if prints:
@@ -355,13 +363,13 @@ def drawParetoFrontSuperimposed(fronts, true_fronts, true_costs, colors, name, b
     #     # scatter(ax, true_costs, doLabel=False, color="gainsboro", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
 
-    finishPlot(font, name, bounding_box, x_offset, x_scale)
+    finishPlot(font, name, bounding_box, x_offset, x_scale, outputDir)
     plt.close(fig)
 
 
 
-def loadDataChains(filename):
-    with open(f'output/data/{filename}.json', "r") as file:
+def loadDataChains(filename, outputDir="output"):
+    with open(f'{outputDir}/data/{filename}.json', "r") as file:
         jsonStr = file.read()
         obj = json.loads(jsonStr)
 
@@ -375,11 +383,11 @@ def loadDataChains(filename):
         return (schedules, obj['Efficient'], optimistic_front, realizable_front)#, truth, truth_costs)
 
 
-def loadTruth(filename):
+def loadTruth(filename, outputDir="output"):
     if filename is None:
         return (None, None)
 
-    truth_schedules, is_efficient, truth_optimistic_front, truth_realizable_front = loadDataChains(filename)
+    truth_schedules, is_efficient, truth_optimistic_front, truth_realizable_front = loadDataChains(filename, outputDir)
 
     scheds_nondominated = []
     scheds_dominated = []
@@ -400,7 +408,8 @@ if __name__ == "__main__":
     #bounding_box = np.array([[-1.50e6, -1.40e6+15], [0.0000+3.5, 25+1.5]])
     # bounding_box = np.array([[-1.560e6, -1.10e6+15], [0.0000+3.5, 25+1.5]])
     #bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
-    bounding_box = np.array([[-1.56e6, -1e6], [0.0001, 30]])
+    #bounding_box = np.array([[-1.56e6, -1e6], [0.0001, 30]])
+    bounding_box = np.array([[-1.56e6, -1.04e6], [5.0001, 28]])
 
     x_offset = 1.56e6
     x_scale = 1/1000
@@ -412,12 +421,14 @@ if __name__ == "__main__":
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step2",
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step3",
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step4",
-        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step1",
+        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step1",
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step2",
-        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step4",
-        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step8",
+        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step4",
+        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step8",
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step14",
-        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
+        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step16"
+        #"pareto-c4-l4-truth_no-alpha_"
+        # "pareto-c4-l4-truth_10alpha_"
     ]
 
     label_offsets = {
