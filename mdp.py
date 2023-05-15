@@ -939,278 +939,6 @@ def smallGrid():
     return grid, mdp, discount, start_state
 
 
-def mediumGrid():
-    goalActionReward = 10000
-    noopReward = 0#-1
-    wallPenalty = -50000
-    movePenalty = -1
-
-    moveProb = 0.4
-    discount = 0.707106781#0.5
-
-    grid = [
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    ]
-
-    start_state = (0, 0)
-
-    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
-    return grid, mdp, discount, start_state
-
-
-def largeGrid():
-    goalActionReward = 10000
-    noopReward = 0#-1
-    wallPenalty = -50000
-    movePenalty = -1
-
-    moveProb = 0.4
-    discount = 0.707106781#0.5
-
-    grid = [
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    ]
-
-    start_state = (0, 0)
-
-    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
-    return grid, mdp, discount, start_state
-
-
-def paper2An(n, discount = math.sqrt(0.99)):
-    goalActionReward = 10000
-    noopReward = 0#-1
-    wallPenalty = -300000
-    movePenalty = -1
-
-    moveProb = 0.9
-    # discount = math.sqrt(0.99)
-
-    # grid = [
-    #     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    #     [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0],
-    #     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-    #     [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0],
-    #     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    # ]
-    grid = [
-        [0],
-        [0],
-        [0],
-        [0],
-        [0]
-    ]
-
-    for i in range(n):
-        grid[0] += [0, 0, 0]
-        grid[1] += [0, 0, 1]
-        grid[2] += [0, 0, 0]
-        grid[3] += [0, 0, 1]
-        grid[4] += [0, 0, 0]
-    
-    grid[0] += [0, 0, 0]
-    grid[1] += [0, 0, 0]
-    grid[2] += [0, 0, 2]
-    grid[3] += [0, 0, 0]
-    grid[4] += [0, 0, 0]
-
-    start_state = (1, 2)
-
-    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
-    return grid, mdp, discount, start_state
-
-
-def paper2A():
-    return paper2An(3)
-
-
-def corridorTwoCadence(n1, n2, cadence1, cadence2, discount = math.sqrt(0.99)):
-    goalActionReward = 10000
-    noopReward = 0#-1
-    wallPenalty = -300000
-    movePenalty = -1
-
-    moveProb = 0.9
-
-    grid = [
-        [0],
-        [0],
-        [0],
-        [0],
-        [0]
-    ]
-
-    for i in range(n1):
-        for j in range(cadence1-1):
-            for k in range(len(grid)):
-                grid[k] += [0]
-        grid[0] += [0]
-        grid[1] += [1]
-        grid[2] += [0]
-        grid[3] += [1]
-        grid[4] += [0]
-
-    for i in range(n2):
-        for j in range(cadence2-1):
-            for k in range(len(grid)):
-                grid[k] += [0]
-        grid[0] += [0]
-        grid[1] += [1]
-        grid[2] += [0]
-        grid[3] += [1]
-        grid[4] += [0]
-    
-    # grid[0] += [0, 0, 0]
-    # grid[1] += [0, 0, 0]
-    # grid[2] += [0, 0, 2]
-    # grid[3] += [0, 0, 0]
-    # grid[4] += [0, 0, 0]
-    grid[0] += [0, 0]
-    grid[1] += [0, 0]
-    grid[2] += [0, 2]
-    grid[3] += [0, 0]
-    grid[4] += [0, 0]
-
-    start_state = (1, 2)
-
-    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
-    return grid, mdp, discount, start_state
-
-
-def splitterGrid(rows = 8, discount = math.sqrt(0.9)):
-    goalActionReward = 10000
-    noopReward = 0#-1
-    wallPenalty = -50000
-    movePenalty = -1
-
-    moveProb = 0.9
-    # discount = math.sqrt(0.9)
-
-    grid = []
-    
-    # rows = 8
-    p1 = 2
-    p2 = 3
-
-    maxN = math.floor(rows / 3)#3
-    nL = 0
-    nR = 0
-
-    for i in range(rows):
-        row = None
-        if nL < maxN and i % p1 == 1:#(rows-i) % p1 == 1:
-            nL += 1
-            row = [0, 1, 0, 1, 0, 1]
-        else:
-            row = [0, 0, 0, 0, 0, 0]
-
-        row.append(2 if i == 0 else 1)
-
-        if nR < maxN and i % p2 == 1:#(rows-i) % p2 == 1:
-            nR += 1
-            row += [1, 0, 1, 0, 1, 0]
-        else:
-            row += [0, 0, 0, 0, 0, 0]
-        grid.append(row)
-    
-    grid.append([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
-    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-
-    start_state = (6, rows+4-1)
-
-    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
-    return grid, mdp, discount, start_state
-
-
-def splitterGrid2(rows = 8, discount = math.sqrt(0.9)):
-    goalActionReward = 10000
-    noopReward = 0#-1
-    wallPenalty = -50000
-    movePenalty = -1
-
-    moveProb = 0.9
-    # discount = math.sqrt(0.9)
-
-    grid = []
-    
-    # rows = 8
-    p1 = 2
-    p2 = 3
-
-    maxN = math.floor(rows / 3)#3
-    nL = 0
-    nR = 0
-
-    grid.append([0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0])
-
-    j = 1
-    for i in range(1, rows):
-        row = None
-        if nL < maxN and j % p1 == 1:#(rows-i) % p1 == 1:
-            nL += 1
-            row = [0, 1, 0, 1, 0, 1]
-
-            if nL == 2:
-                p1 = p2
-                j = 1
-        else:
-            row = [0, 0, 0, 0, 0, 0]
-
-        j += 1
-
-        # row.append(2 if i == 0 else 1)
-        row.append(1)
-
-        if nR < maxN and i % p2 == 1:#(rows-i) % p2 == 1:
-            nR += 1
-            row += [1, 0, 1, 0, 1, 0]
-        else:
-            row += [0, 0, 0, 0, 0, 0]
-        # grid.append(row)
-        grid.insert(1, row)
-    
-    grid.append([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
-    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-    grid.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-
-    start_state = (6, rows+4-1)
-
-    mdp = createMDP(grid, goalActionReward, noopReward, wallPenalty, movePenalty, moveProb)
-    return grid, mdp, discount, start_state
-
-
 def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound, 
         drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=False, 
         bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None, outputDir="output"):
@@ -1331,46 +1059,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound,
     return values[start_state], policy, elapsed, compMDP
 
 
-def runFig2Ratio(wallMin, wallMax, increment = 1, _discount = math.sqrt(0.99)):
-    results = []
-    for numWalls in range(wallMin, wallMax+increment, increment):
-        grid, mdp, discount, start_state = paper2An(numWalls, _discount)
 
-        pref = "paperFig2-" + str(numWalls) + "w-"
-        value2, _, elapsed2, _ = run(grid, mdp, discount, start_state, checkin_period=2, doBranchAndBound=False, doLinearProg=True, drawPolicy=False, drawIterations=False, outputPrefix=pref)
-        value3, _, elapsed3, _ = run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=False, doLinearProg=True, drawPolicy=False, drawIterations=False, outputPrefix=pref)
-
-        r = (numWalls, value2, value3)
-        results.append(r)
-
-        print("\nLength " + str(3 + r[0] * 3 + 1) + " (" + str(r[0]) + " walls):")
-        print("\tValue k=2:", r[1])
-        print("\tValue k=3:", r[2])
-        print("\tRatio k3/k2:", r[2]/r[1])
-        print("")
-
-    print("\n\n ===== RESULTS ===== \n\n")
-    for r in results:
-        print("Length " + str(3 + r[0] * 3 + 1) + " (" + str(r[0]) + " walls) k3/k2:", r[2]/r[1])
-        # print("")
-
-
-def runCheckinSteps(checkinMin, checkinMax, increment = 1):
-    grid, mdp, discount, start_state = paper2An(3)
-    times = []
-
-    for checkin_period in range(checkinMin, checkinMax+increment, increment):
-        print("\n\n ==== CHECKIN PERIOD " + str(checkin_period)  + " ==== \n\n")
-        time = 0
-        for i in range(0, 1):
-            value, _, elapsed, _ = run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
-            time += elapsed
-        time /= 1
-
-        times.append(time)
-        print("")
-        print("Average",time)
-        print(times)
 
 
 def countActionSimilarity(mdp, thresh):
@@ -1593,69 +1282,7 @@ def blendMDP(mdp1, mdp2, stepsFromState, stateReference):
     return mdp
         
 
-def runTwoCadence(checkin1, checkin2, outputDir):
 
-    n1 = 3
-    grid, mdp, discount, start_state = corridorTwoCadence(n1=n1, n2=n1, cadence1=checkin1, cadence2=checkin2)
-    policy = None
-    values = None
-    
-    start = time.time()
-    elapsed = None
-
-    compMDP1 = createCompositeMDP(mdp, discount, checkin1)
-    compMDP2 = createCompositeMDP(mdp, discount, checkin2)
-    print("Actions:",len(mdp.actions),"->",str(len(compMDP1.actions)) + ", " + str(len(compMDP2.actions)))
-
-    end1 = time.time()
-    print("MDP composite time:", end1 - start)
-
-    tB = 0
-    tL = 0
-
-    bestK = -1
-    bestStartVal = -1
-    bestBlendedMDP = None
-    bestPolicy = None
-    bestValues = None
-    vals = []
-
-    for k in range(4,5):#0, 14):
-        b1 = time.time()
-        blendedMDP = blendMDP(mdp1 = compMDP1, mdp2 = compMDP2, stepsFromState = k, stateReference=start_state)
-        tB += time.time() - b1
-
-        discount_t = discount#pow(discount, checkin_period)
-
-        l1 = time.time()
-        policy, values = linearProgrammingSolve(grid, blendedMDP, discount_t)
-        tL += time.time() - l1
-
-        vals.append(values[start_state])
-        
-        if values[start_state] > bestStartVal:
-            bestStartVal = values[start_state] 
-            bestK = k
-            bestBlendedMDP = blendedMDP
-            bestPolicy = policy
-            bestValues = values
-
-    print("Best K:", bestK)
-    print("Values", vals)
-    # print("Val diff:", vals[(n1-1)*2] - vals[0])
-
-    print("MDP blend time:", tB)
-    print("MDP linear programming time:", tL)
-    
-    end = time.time()
-    print("MDP total time:", end - start)
-    elapsed = end - start
-
-    print("Start state value:",bestValues[start_state])
-
-    draw(grid, bestBlendedMDP, bestValues, bestPolicy, True, False, f"{outputDir}/policy-comp-"+str(checkin1)+"v"+str(checkin2)+"-lp")
-
-    return bestValues[start_state], elapsed
 
 def runOneValueIterationPass(prev_values, discount, mdp):
     new_values = {}
@@ -2044,7 +1671,7 @@ def mixedPolicy(values1, values2, compMDP1, compMDP2, alpha, discount):
 #     return policy_blend
 
 
-def createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k, midpoints):
+def createChainTail(grid, mdp, discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints):
     discount_t = pow(discount, k)
     discount_c_t = pow(discount_checkin, k)
     compMDP = compMDPs[k]
@@ -2202,7 +1829,7 @@ def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompM
     return all_chains
 
 
-def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, 
+def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, 
                          checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, 
                          bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
@@ -2228,7 +1855,7 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, tar
     l = 1
     
     for k in checkin_periods:
-        chain = createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, k, midpoints)
+        chain = createChainTail(grid, mdp, discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints)
         chains_list[0].append(chain)
         all_chains.append(chain)
 
@@ -2988,7 +2615,7 @@ def getData(mdp, schedules, initialDistribution):
     return sched_bounds, is_efficient, front_lower, front_upper
 
 
-def runChains(grid, mdp, discount, discount_checkin, start_state, target_state, 
+def runChains(grid, mdp, discount, discount_checkin, start_state, 
     checkin_periods, chain_length, do_filter, margin, distName, startName, 
     distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints, outputDir="output"):
         
@@ -3010,7 +2637,7 @@ def runChains(grid, mdp, discount, discount_checkin, start_state, target_state,
 
     c_start = time.time()
 
-    schedules = calculateChainValues(grid, mdp, discount, discount_checkin, start_state, target_state, 
+    schedules = calculateChainValues(grid, mdp, discount, discount_checkin, start_state, 
         checkin_periods=checkin_periods, 
         # execution_cost_factor=1, 
         # checkin_costs={2: 10, 3: 5, 4: 2}, 
