@@ -1442,7 +1442,10 @@ def getStateDistributionParetoValues(mdp, chain, distributions):
             values = chain[0]
             
             execution_cost = - values[state]
-            checkin_cost = - chain[1][state]
+            if type(chain[1]) is dict:
+                checkin_cost = - chain[1][state]
+            else:
+                checkin_cost = - chain[1]
 
             dist_execution_cost += distribution[i] * execution_cost
             dist_checkin_cost += distribution[i] * checkin_cost
@@ -1452,28 +1455,28 @@ def getStateDistributionParetoValues(mdp, chain, distributions):
     return pareto_values
 
 
-def getStartParetoValues(mdp, chains, initialDistribution, is_lower_bound):
-    dists = [initialDistribution]
+# def getStartParetoValues(mdp, chains, initialDistribution, is_lower_bound):
+#     dists = [initialDistribution]
 
-    costs = []
-    indices = []
-    for chain in chains:
-        name = ""
-        for checkin in chain[0]:
-            name += str(checkin)
-        name += "*"
+#     costs = []
+#     indices = []
+#     for chain in chains:
+#         name = ""
+#         for checkin in chain[0]:
+#             name += str(checkin)
+#         name += "*"
 
-        points = chainPoints(chain, is_lower_bound)
-        idx = []
-        #nameSuff = [' $\pi^\\ast$', ' $\pi^c$']
-        for p in range(len(points)):
-            point = points[p]
+#         points = chainPoints(chain, is_lower_bound)
+#         idx = []
+#         #nameSuff = [' $\pi^\\ast$', ' $\pi^c$']
+#         for p in range(len(points)):
+#             point = points[p]
             
-            idx.append(len(costs))
-            costs.append([name, getStateDistributionParetoValues(mdp, point, dists)])
+#             idx.append(len(costs))
+#             costs.append([name, getStateDistributionParetoValues(mdp, point, dists)])
 
-        indices.append([name, idx])
-    return costs, indices
+#         indices.append([name, idx])
+#     return costs, indices
 
 def dirac(mdp, state):
     dist = []
@@ -1530,7 +1533,7 @@ def chainPoints(chain, is_lower_bound):
         # return [[execution_pi_star, checkins_pi_star], [execution_pi_c, checkins_pi_c]]
     # return [[values, hitting_checkins], [values, hitting_checkins_greedy], [values_greedy, hitting_checkins_greedy]]
 
-def step_filter(mdp, new_chains, all_chains, distributions, margin, bounding_box):
+def step_filter(mdp, new_chains, all_chains, distributions, margin, bounding_box, isMultiplePolicies):
 
     # costs = []
     # indices = []
@@ -1562,7 +1565,10 @@ def step_filter(mdp, new_chains, all_chains, distributions, margin, bounding_box
     is_efficient_upper = calculateParetoFrontC(upper)
     front_upper = np.array([upper[i] for i in range(len(upper)) if is_efficient_upper[i]])
     
-    is_efficient = calculateParetoFrontSchedUpper(all_chains, front_upper)
+    if isMultiplePolicies:
+        is_efficient = calculateParetoFrontSchedUpper(all_chains, front_upper)
+    else:
+        is_efficient = is_efficient_upper
     
     # front = np.array([costs[i] for i in range(len(costs)) if is_efficient[i]])
     # front = np.array([all_chains[i] for i in range(len(all_chains)) if is_efficient[i]])
@@ -1587,11 +1593,17 @@ def step_filter(mdp, new_chains, all_chains, distributions, margin, bounding_box
         elif margin > 0:
             # for idx in indices[i]:
             #     cost = np.array(costs[idx])
-            for lower in sched.proj_lower_bound:
-                dist = calculateDistance(lower, front_upper, bounding_box)
+            if isMultiplePolicies:
+                for lower in sched.proj_lower_bound:
+                    dist = calculateDistance(lower, front_upper, bounding_box)
+                    if dist <= margin:
+                        filtered_all_chains.append(sched)
+                        break
+            else:
+                point = sched.proj_upper_bound[0]
+                dist = calculateDistance(point, front_upper, bounding_box)
                 if dist <= margin:
                     filtered_all_chains.append(sched)
-                    break
 
     # front = np.array([costs[i] for i in range(len(all_chains)) if is_efficient[i]])
     
@@ -1631,7 +1643,7 @@ def chains_to_str(chains):
     return text
     
 
-def drawParetoStep(mdp, schedules, initialDistribution, TRUTH, TRUTH_COSTS, plotName, title, stepLen, bounding_box, outputDir):
+def drawParetoStep(mdp, schedules, initialDistribution, TRUTH, TRUTH_COSTS, plotName, title, stepLen, bounding_box, outputDir, isMultiplePolicies):
 
     plotName += "-step" + str(stepLen)
     title += " Length " + str(stepLen)
@@ -1645,7 +1657,7 @@ def drawParetoStep(mdp, schedules, initialDistribution, TRUTH, TRUTH_COSTS, plot
     # front_upper = [start_state_costs_upper[i] for i in range(len(start_state_costs_upper)) if is_efficient_upper[i]]
     # front_upper.sort(key = lambda point: point[1][0])
 
-    sched_bounds, is_efficient, front_lower, front_upper = getData(mdp, schedules, initialDistribution)
+    sched_bounds, is_efficient, front_lower, front_upper = getData(mdp, schedules, initialDistribution, isMultiplePolicies)
 
     error = 0 if TRUTH is None else calculateError((front_lower, front_upper), TRUTH, bounding_box)
     print("Error from true Pareto:",error)
@@ -1671,134 +1683,95 @@ def mixedPolicy(values1, values2, compMDP1, compMDP2, alpha, discount):
 #     return policy_blend
 
 
-def createChainTail(grid, mdp, discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints):
+def createChainTail(grid, mdp, discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction):
     discount_t = pow(discount, k)
     discount_c_t = pow(discount_checkin, k)
     compMDP = compMDPs[k]
-    greedyMDP = greedyCompMDPs[k]
 
     policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
-    policy_greedy, values_greedy = linearProgrammingSolve(grid, greedyMDP, discount_c_t, restricted_action_set=None, is_negative=True) # we know values are negative, LP & simplex method doesn't work with negative decision variables so we flip 
     
-    #hitting_time = expectedMarkovHittingTime(mdp, markov, target_state, k)
-    #hitting_checkins = expectedMarkovHittingTime(mdp, markovProbsFromPolicy(compMDP, policy), target_state, 1)
+    if checkinCostFunction is None:
+        greedyMDP = greedyCompMDPs[k]
+    
+        policy_greedy, values_greedy = linearProgrammingSolve(grid, greedyMDP, discount_c_t, restricted_action_set=None, is_negative=True) # we know values are negative, LP & simplex method doesn't work with negative decision variables so we flip 
+        
+        eval_normal = policyEvaluation(greedyMDP, policy, discount_c_t)
+        eval_greedy = policyEvaluation(compMDP, policy_greedy, discount_t)
 
-    #eval_greedy = policyEvaluation(greedyMDP, policy_greedy, discount_c_t)
-    eval_normal = policyEvaluation(greedyMDP, policy, discount_c_t)
-    eval_greedy = policyEvaluation(compMDP, policy_greedy, discount_t)
+        midpoint_evals = []
 
-    # values_blend = {state: alpha * values[state] + beta * values_greedy[state] for state in mdp.states}
-    # blendedMDP = blendMDPCosts(compMDP, greedyMDP, alpha, beta) 
-    # policy_blend = policyFromValues(blendedMDP, values_blend)
+        for midpoint_alpha in midpoints:
+            policy_blend = mixedPolicy(values, values_greedy, compMDP, greedyMDP, midpoint_alpha, discount_t) # TODO what if discounts are different?
+            
+            eval_blend_exec = policyEvaluation(compMDP, policy_blend, discount_t)
+            eval_blend_check = policyEvaluation(greedyMDP, policy_blend, discount_c_t)
 
-    # eval_blend_exec = policyEvaluation(compMDP, policy_blend, discount_t)
-    # eval_blend_check = policyEvaluation(greedyMDP, policy_blend, discount_c_t)
-    midpoint_evals = []
+            midpoint_evals.append((eval_blend_exec, eval_blend_check))
+        
+        sched = Schedule(strides=[k], pi_exec_data=(values, eval_normal), pi_checkin_data=(eval_greedy, values_greedy), pi_mid_data=midpoint_evals)
+    else:
+        eval_normal = checkinCostFunction([k], discount_checkin) # single value for all policies and states - so we only need pi^exec
+        sched = Schedule(strides=[k], pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None)
 
-    for midpoint_alpha in midpoints:
-        policy_blend = mixedPolicy(values, values_greedy, compMDP, greedyMDP, midpoint_alpha, discount_t) # TODO what if discounts are different?
-        # policy_blend = mixedPolicy2(values, eval_greedy, compMDP, greedyMDP, midpoint_alpha)
-
-        eval_blend_exec = policyEvaluation(compMDP, policy_blend, discount_t)
-        eval_blend_check = policyEvaluation(greedyMDP, policy_blend, discount_c_t)
-
-        midpoint_evals.append((eval_blend_exec, eval_blend_check))
-
-    #hitting_checkins_greedy = expectedMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1)
-
-    # print(k)
-    # # print("valu1",values)
-    # print("valu",[values_greedy[mdp.states[i]] for i in range(len(mdp.states))])
-    # print("eval",eval_greedy)
-    # print("hitt", hitting_checkins_greedy)
-
-    # draw(grid, greedyMDP, values_greedy, policy_greedy, True, False, "output/policy-chain"+str(k)+"-lp")
-
-    #chain = [[k], values, [policy], (hitting_time, hitting_checkins)]
-    #chain = [[k], [[values, hitting_checkins], [values_greedy, eval_greedy]]]
-    #chain = [[k], [[values, eval_normal], [values_greedy, eval_greedy], midpoint_evals]]
-    sched = Schedule(strides=[k], pi_exec_data=(values, eval_normal), pi_checkin_data=(eval_greedy, values_greedy), pi_mid_data=midpoint_evals)
     return sched
 
-def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, sched, k, midpoints):
+def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, sched, k, midpoints, checkinCostFunction):
     compMDP = compMDPs[k]
-    greedyMDP = greedyCompMDPs[k]
 
     chain_checkins = list(sched.strides)
     chain_checkins.insert(0, k)
 
     discount_t = pow(discount, k)
     discount_c_t = pow(discount_checkin, k)
-
-    #new_values = runOneValueIterationPass(tail_values, discount_t, compMDP)
-
-    #policies = list(chain[2])
-    #policy = policyFromValues(compMDP, tail_values) # !!!! should be using new values not old yes?
-    #policies.insert(0, policy)
-
-    # markov = markovProbsFromPolicy(compMDP, policy)
-    # prev_hitting_time = chain[3][0]
-    # prev_hitting_checkins = chain[3][1]
-    # hitting_time = extendMarkovHittingTime(mdp, markov, target_state, k, prev_hitting_time)
-    # hitting_checkins = extendMarkovHittingTime(mdp, markov, target_state, 1, prev_hitting_checkins)
     
-    # new_chain = [chain_checkins, new_values, policies, (hitting_time, hitting_checkins)]
-
     old_values = sched.pi_exec_data[0]
     new_values = runOneValueIterationPass(old_values, discount_t, compMDP)
     policy = policyFromValues(compMDP, new_values, discount_t)
     
-    # prev_hitting = tail_values[0][1]
-    # new_hitting = extendMarkovHittingTime(mdp, markovProbsFromPolicy(compMDP, policy), target_state, 1, prev_hitting)
-    old_eval = sched.pi_exec_data[1]
-    new_eval = extendPolicyEvaluation(greedyMDP, policy, old_eval, discount_c_t)
+    if checkinCostFunction is None:
+        greedyMDP = greedyCompMDPs[k]
 
+        old_eval = sched.pi_exec_data[1]
+        new_eval = extendPolicyEvaluation(greedyMDP, policy, old_eval, discount_c_t)
 
-    old_values_greedy = sched.pi_checkin_data[1]
-    new_values_greedy = runOneValueIterationPass(old_values_greedy, discount_c_t, greedyMDP)
-    policy_greedy = policyFromValues(greedyMDP, new_values_greedy, discount_c_t)
+        old_values_greedy = sched.pi_checkin_data[1]
+        new_values_greedy = runOneValueIterationPass(old_values_greedy, discount_c_t, greedyMDP)
+        policy_greedy = policyFromValues(greedyMDP, new_values_greedy, discount_c_t)
 
-    #new_eval_greedy = extendPolicyEvaluation(greedyMDP, policy_greedy, tail_values[1][1], discount_c_t)
-    old_eval_greedy = sched.pi_checkin_data[0]
-    new_eval_greedy = extendPolicyEvaluation(compMDP, policy_greedy, old_eval_greedy, discount_t)
-    
-    # prev_hitting_greedy = tail_values[1][2]
-    # new_hitting_greedy = extendMarkovHittingTime(mdp, markovProbsFromPolicy(greedyMDP, policy_greedy), target_state, 1, prev_hitting_greedy)
+        old_eval_greedy = sched.pi_checkin_data[0]
+        new_eval_greedy = extendPolicyEvaluation(compMDP, policy_greedy, old_eval_greedy, discount_t)
+        
+        midpoint_evals = sched.pi_mid_data
+        new_midpoint_evals = []
+        for m_ind in range(len(midpoints)):
+            midpoint_alpha = midpoints[m_ind]
+            evals = midpoint_evals[m_ind]
 
+            policy_blend = mixedPolicy(new_values, new_values_greedy, compMDP, greedyMDP, midpoint_alpha, discount_t) # TODO what if discounts are different?
+            
+            eval_blend_exec = extendPolicyEvaluation(compMDP, policy_blend, evals[0], discount_t)
+            eval_blend_check = extendPolicyEvaluation(greedyMDP, policy_blend, evals[1], discount_c_t)
 
-    # values_blend = {state: alpha * new_values[state] + beta * new_values_greedy[state] for state in mdp.states}
-    # blendedMDP = blendMDPCosts(compMDP, greedyMDP, alpha, beta) 
-    # policy_blend = policyFromValues(blendedMDP, values_blend)
-
-    # eval_blend_exec = extendPolicyEvaluation(compMDP, policy_blend, tail_values[2][0], discount_t)
-    # eval_blend_check = extendPolicyEvaluation(greedyMDP, policy_blend, tail_values[2][1], discount_c_t)
-
-    midpoint_evals = sched.pi_mid_data
-    new_midpoint_evals = []
-    for m_ind in range(len(midpoints)):
-        midpoint_alpha = midpoints[m_ind]
-        evals = midpoint_evals[m_ind]
-
-        policy_blend = mixedPolicy(new_values, new_values_greedy, compMDP, greedyMDP, midpoint_alpha, discount_t) # TODO what if discounts are different?
-        # policy_blend = mixedPolicy2(new_values, new_eval_greedy, compMDP, greedyMDP, midpoint_alpha)
-
-        eval_blend_exec = extendPolicyEvaluation(compMDP, policy_blend, evals[0], discount_t)
-        eval_blend_check = extendPolicyEvaluation(greedyMDP, policy_blend, evals[1], discount_c_t)
-
-        new_midpoint_evals.append((eval_blend_exec, eval_blend_check))
-    
-    # new_chain = [chain_checkins, [[new_values, new_hitting], [new_values_greedy, new_eval_greedy, new_hitting_greedy]]]
-    # new_chain = [chain_checkins, [[new_values, new_eval], [new_values_greedy, new_eval_greedy], new_midpoint_evals]]
-    new_sched = Schedule(
-        strides=chain_checkins, 
-        pi_exec_data=(new_values, new_eval), 
-        pi_checkin_data=(new_eval_greedy, new_values_greedy), 
-        pi_mid_data=new_midpoint_evals)
+            new_midpoint_evals.append((eval_blend_exec, eval_blend_check))
+        
+        new_sched = Schedule(
+            strides=chain_checkins, 
+            pi_exec_data=(new_values, new_eval), 
+            pi_checkin_data=(new_eval_greedy, new_values_greedy), 
+            pi_mid_data=new_midpoint_evals)
+    else:
+        new_eval = checkinCostFunction(chain_checkins, discount_checkin) # single value for all policies and states - so we only need pi^exec
+        
+        new_sched = Schedule(
+            strides=chain_checkins, 
+            pi_exec_data=(new_values, new_eval), 
+            pi_checkin_data=None, pi_mid_data=None)
     
     return new_sched
 
 
-def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, midpoints):
+def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, 
+                      do_filter, distributions, margin, bounding_box, midpoints, checkinCostFunction):
     chains = []
     previous_chains = chains_list[stage - 1]
 
@@ -1807,12 +1780,12 @@ def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompM
             if stage == 1 and k == tail.strides[0]:
                 continue # don't duplicate recurring tail value (e.g. 23* and 233*)
             
-            new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k, midpoints)
+            new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k, midpoints, checkinCostFunction)
             chains.append(new_chain)
             all_chains.append(new_chain)
     
     if do_filter:
-        filtered_chains, filtered_all_chains = step_filter(mdp, chains, all_chains, distributions, margin, bounding_box)
+        filtered_chains, filtered_all_chains = step_filter(mdp, chains, all_chains, distributions, margin, bounding_box, checkinCostFunction is None)
         #print("Filtered from",len(chains),"to",len(filtered_chains),"new chains and",len(all_chains),"to",len(filtered_all_chains),"total.")
         og_len = len(all_chains) - len(chains)
         new_len_min_add = len(filtered_all_chains) - len(filtered_chains)
@@ -1831,14 +1804,23 @@ def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompM
 
 def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, 
                          checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, 
-                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir):
+                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir, checkinCostFunction):
+    print("Compositing MDPs")
+    c_start = time.time()
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
+
+    print("time to composite MDPs:", time.time() - c_start)
+
+    isMultiplePolicies = checkinCostFunction is None
 
     # greedy_mdp = convertToGreedyMDP(grid, mdp)
     # all_greedy_compMDPs = createCompositeMDPs(greedy_mdp, discount_checkin, checkin_periods[-1])
     # greedyCompMDPs = {k: all_greedy_compMDPs[k-1] for k in checkin_periods}
-    greedyCompMDPs = {k: convertCompToCheckinMDP(grid, compMDPs[k], k, discount_checkin) for k in checkin_periods}
+    if isMultiplePolicies:
+        greedyCompMDPs = {k: convertCompToCheckinMDP(grid, compMDPs[k], k, discount_checkin) for k in checkin_periods}
+    else:
+        greedyCompMDPs = None
 
     # for k in checkin_periods:
     #     print(k,greedyCompMDPs[k].rewards[greedyCompMDPs[k].states[0]][greedyCompMDPs[k].actions[0]])
@@ -1855,7 +1837,7 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state,
     l = 1
     
     for k in checkin_periods:
-        chain = createChainTail(grid, mdp, discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints)
+        chain = createChainTail(grid, mdp, discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction)
         chains_list[0].append(chain)
         all_chains.append(chain)
 
@@ -1868,7 +1850,7 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state,
 
 
     if drawIntermediate:
-        drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir)
+        drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir, isMultiplePolicies)
 
 
     print("--------")
@@ -1879,10 +1861,12 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state,
     for i in range(1, chain_length):
         l += 1
 
-        all_chains = runExtensionStage(mdp, i, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, do_filter, distributions, margin, bounding_box, midpoints)
+        all_chains = runExtensionStage(mdp, i, chains_list, all_chains, compMDPs, greedyCompMDPs, 
+                                       discount, discount_checkin, checkin_periods, do_filter, distributions, margin, 
+                                       bounding_box, midpoints, checkinCostFunction)
 
         if drawIntermediate:
-            drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir)
+            drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir, isMultiplePolicies)
 
         print("--------")
         print(len(all_chains),"current schedules")
@@ -2062,12 +2046,12 @@ def calculateParetoFrontC(costs):
 
     return is_efficient
 
-def is_eff(schedules, i):
-    sched = schedules[i]
-    for j in range(len(schedules)):
-        if j != i and not sched.not_dominated_by(schedules[j]):
-            return False
-    return True
+# def is_eff(schedules, i):
+#     sched = schedules[i]
+#     for j in range(len(schedules)):
+#         if j != i and not sched.not_dominated_by(schedules[j]):
+#             return False
+#     return True
 
 # def calculateParetoFrontSched(schedules):
 #     is_efficient = [is_eff(schedules, i) for i in range(len(schedules))]
@@ -2193,14 +2177,17 @@ def calculateError(fronts, true_fronts, bounding_box):
     front_lower, front_upper = fronts
     truth_optimistic_front, truth_realizable_front = true_fronts
 
-    area_front_lower = areaUnderFront(front_lower, bounding_box)
     area_front_upper = areaUnderFront(front_upper, bounding_box)
-
-    area_true_lower = areaUnderFront(truth_optimistic_front, bounding_box)
     area_true_upper = areaUnderFront(truth_realizable_front, bounding_box)
 
-    #return abs(area - area_true) / area_true
-    error = (abs(area_front_upper - area_true_upper) + abs(area_front_lower - area_true_lower)) / (area_true_upper + area_true_lower)
+    if front_lower is not None:
+        area_front_lower = areaUnderFront(front_lower, bounding_box)
+        area_true_lower = areaUnderFront(truth_optimistic_front, bounding_box)
+
+        error = (abs(area_front_upper - area_true_upper) + abs(area_front_lower - area_true_lower)) / (area_true_upper + area_true_lower)
+    else:
+        error = abs(area_front_upper - area_true_upper) / area_true_upper
+
     return error
 
 def areaUnderFront(front, bounding_box):
@@ -2583,7 +2570,7 @@ def drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_s
     A.draw(name + '.pdf')#, prog="neato")
 
 
-def getData(mdp, schedules, initialDistribution):
+def getData(mdp, schedules, initialDistribution, isMultiplePolicies):
     dists = [initialDistribution]
     
     upper = []
@@ -2603,21 +2590,25 @@ def getData(mdp, schedules, initialDistribution):
     is_efficient_upper = calculateParetoFront(upper)
     front_upper_nolbl = np.array([upper[i][1] for i in range(len(upper)) if is_efficient_upper[i]])
     front_upper = [upper[i] for i in range(len(upper)) if is_efficient_upper[i]]
-
-    is_efficient_lower = calculateParetoFront(lower)
-    front_lower = [lower[i] for i in range(len(lower)) if is_efficient_lower[i]]
-
-    is_efficient = calculateParetoFrontSchedUpper(schedules, front_upper_nolbl)
-
-    front_lower.sort(key = lambda point: point[1][0])
     front_upper.sort(key = lambda point: point[1][0])
+
+    if isMultiplePolicies:
+        is_efficient_lower = calculateParetoFront(lower)
+        front_lower = [lower[i] for i in range(len(lower)) if is_efficient_lower[i]]
+        front_lower.sort(key = lambda point: point[1][0])
+
+        is_efficient = calculateParetoFrontSchedUpper(schedules, front_upper_nolbl)
+    else:
+        front_lower = None
+        is_efficient = is_efficient_upper
 
     return sched_bounds, is_efficient, front_lower, front_upper
 
 
 def runChains(grid, mdp, discount, discount_checkin, start_state, 
     checkin_periods, chain_length, do_filter, margin, distName, startName, 
-    distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints, outputDir="output"):
+    distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints, 
+    outputDir="output", checkinCostFunction=None):
         
     midpoints.sort(reverse=True)
 
@@ -2653,7 +2644,8 @@ def runChains(grid, mdp, discount, discount_checkin, start_state,
         name=name,
         title=title,
         midpoints=midpoints, 
-        outputDir=outputDir)
+        outputDir=outputDir, 
+        checkinCostFunction=checkinCostFunction)
 
     numRemaining = len(schedules)# / 3 #because 3 points in each L
     numWouldBeTotal = pow(len(checkin_periods), chain_length)
@@ -2665,7 +2657,7 @@ def runChains(grid, mdp, discount, discount_checkin, start_state,
     # is_efficient_upper = calculateParetoFront(start_state_costs_upper)
     # front_upper = [start_state_costs_upper[i] for i in range(len(start_state_costs_upper)) if is_efficient_upper[i]]
     # front_upper.sort(key = lambda point: point[1][0])
-    sched_bounds, is_efficient, front_lower, front_upper = getData(mdp, schedules, initialDistribution)
+    sched_bounds, is_efficient, front_lower, front_upper = getData(mdp, schedules, initialDistribution, checkinCostFunction is None)
     
     c_end = time.time()
     running_time = c_end - c_start

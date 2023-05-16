@@ -19,8 +19,10 @@ class Schedule:
 
     def set_upper_bound(self):
         self.upper_bound = [self.pi_exec_data]
-        self.upper_bound += self.pi_mid_data
-        self.upper_bound.append(self.pi_checkin_data)
+
+        if self.pi_checkin_data is not None: # if no pi_checkin_data, that means schedule is single point (pi^exec) not upper/lower bounds
+            self.upper_bound += self.pi_mid_data
+            self.upper_bound.append(self.pi_checkin_data)
 
     def set_lower_bound(self): # needs upper bound set first!
         # lower bound is bottom left corner of each pair of upper bound points
@@ -28,11 +30,13 @@ class Schedule:
         # |_|_
         #   |_|_
         self.lower_bound = []
-        for i in range(len(self.upper_bound)-1):
-            p1 = self.upper_bound[i]
-            p2 = self.upper_bound[i+1]
 
-            self.lower_bound.append((p1[0], p2[1]))
+        if self.pi_checkin_data is not None:
+            for i in range(len(self.upper_bound)-1):
+                p1 = self.upper_bound[i]
+                p2 = self.upper_bound[i+1]
+
+                self.lower_bound.append((p1[0], p2[1]))
 
     def set_bounds(self):
         self.set_upper_bound()

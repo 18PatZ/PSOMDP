@@ -81,6 +81,41 @@ def gliderStateRewardFunction(max_reward, state, center_state, desiredSeparation
     return x_reward + y_reward
 
 
+def gliderScheduleCheckinCostFunction(strides, discount):
+    # 2243* 
+    #       (0 + 1g) + 
+    #   g^2 (0 + 1g) + 
+    #   g^4 (0 + 0 + 0 + 1g^3) + 
+    #   g^8 [0 + 0 + 1g^2 + 0 + 0 + 1g^5 + ...]
+    #
+    #   g^0                                 * (g^(s_0 - 1)) + 
+    #   g^(s_0)                             * (g^(s_1 - 1)) + 
+    #   g^(s_0 + s_1)                       * (g^(s_2 - 1)) + 
+    #                          ...                          +
+    #   g^(s_0 + s_1 + s_2 + ... + s_(f-1)) * [g^(s_f-1) + g^(2*s_f-1) + ...]
+
+    # [g^(s_f-1) + g^(2*s_f-1) + ...] = g^(s_f-1) [1 + g^(s_f) + g^(2*s_f) + ...] 
+    #   = sum_n=0_infinity g^(s_f-1) * (g^(s_f))^n
+    #   = g^(s_f-1) / (1 - g^(s_f))
+
+    tail_k = strides[-1]
+    a = discount**(tail_k - 1)
+    r = discount**(tail_k)
+    tail_cost = a / (1 - r)
+
+    current_time = 0
+    total_cost = 0
+
+    for i in range(len(strides)-1):
+        k = strides[i]
+        stride_cost = discount**(k - 1)
+        total_cost += (discount**current_time) * stride_cost
+        current_time += k
+
+    total_cost += (discount**current_time) * tail_cost
+
+    return -total_cost
+
 
 def gliderMDP(maxSeparation = 4, desiredSeparation = 2, moveProb = 0.9, wallPenalty = -10, movePenalty = 0, collidePenalty = -100, desiredStateReward=5):
     gridSize = maxSeparation * 2 + 1
@@ -195,9 +230,11 @@ discount_checkin = discount
 #         bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None, outputDir="../output")
 
 # if True:
+#     print(gliderScheduleCheckinCostFunction([1], discount_checkin))
 #     exit()
 
-bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
+# bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
+bounding_box = np.array([[-1000, -900], [0.0001, 300]])
 
 start_state_index = mdp.states.index(start_state)
 
@@ -276,9 +313,9 @@ for length in lengths:
                 grid, mdp, discount, discount_checkin, start_state,
                 checkin_periods=[1, 2, 3, 4],
                 chain_length=length,
-                do_filter = True,
+                do_filter = False,
                 margin = margin,
-                distName = 'uniform' + alphas_name,
+                distName = 'truth' + alphas_name,
                 startName = '',
                 distributions = distributions, 
                 initialDistribution = initialDistribution,
@@ -287,7 +324,8 @@ for length in lengths:
                 TRUTH_COSTS = truth_schedules,
                 drawIntermediate=True,
                 midpoints = midpoints, 
-                outputDir = "../output")
+                outputDir = "../output", 
+                checkinCostFunction = gliderScheduleCheckinCostFunction)
 
             running_time_avg += running_time
         running_time_avg /= repeats

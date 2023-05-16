@@ -276,11 +276,18 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
     # scatter(ax, points_dominated, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
     
     # draw optimistic front
-    manhattan_lines(ax, optimistic_front, color="#e6c7c7", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
+    if optimistic_front is not None:
+        manhattan_lines(ax, optimistic_front, color="#e6c7c7", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
     #scatter(ax, points_nondominated, doLabel=True, color="#aa3333", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
 
     # draw realizable front
     if realizable_front is not None:
+        pts = [pt[1] for pt in realizable_front]
+        min = np.min(pts, axis=0)
+        max = np.max(pts, axis=0)
+        if prints:
+            print("Realizable front actual bounds", [[min[0], max[0]], [min[1], max[1]]])
+
         manhattan_lines(ax, realizable_front, color="#aa3333", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed")
         # manhattan_lines(ax, realizable_front, color="#aa3333", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#c7e6d0")
         scatter(ax, realizable_front, doLabel=True, color="blue", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
@@ -304,10 +311,13 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
 
     for sched in scheds_nondominated:
         schedule_points = []
+            
         schedule_points.append([sched.name, sched.upper_bound[0]])
-        for b in sched.lower_bound:
-            schedule_points.append([sched.name, b])
-        schedule_points.append([sched.name, sched.upper_bound[-1]])
+            
+        if len(sched.lower_bound) > 0:
+            for b in sched.lower_bound:
+                schedule_points.append([sched.name, b])
+            schedule_points.append([sched.name, sched.upper_bound[-1]])
     
         # drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
         #drawL(ax, schedule_points, bounding_box=bounding_box, color="#ff2222", face_color="#ff2222", x_offset=x_offset, x_scale=x_scale)
@@ -409,24 +419,29 @@ if __name__ == "__main__":
     # bounding_box = np.array([[-1.560e6, -1.10e6+15], [0.0000+3.5, 25+1.5]])
     #bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
     #bounding_box = np.array([[-1.56e6, -1e6], [0.0001, 30]])
-    bounding_box = np.array([[-1.56e6, -1.04e6], [5.0001, 28]])
+    # bounding_box = np.array([[-1.56e6, -1.04e6], [5.0001, 28]])
+    bounding_box = np.array([[-1000, -900], [0.0001, 300]])
 
     x_offset = 1.56e6
     x_scale = 1/1000
 
-    truth_name = None#"pareto-c4-l4-truth"
+    truth_name = "pareto-c3-l4-truth_no-alpha_"
 
     names = [
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step1",
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step2",
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step3",
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step4",
-        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step1",
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step1",
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step2",
-        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step4",
-        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step8",
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step4",
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step8",
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step14",
-        "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step16"
+        # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step16",
+        "pareto-c3-l4-uniform_no-alpha_-filtered-margin0.000-step1",
+        "pareto-c3-l4-uniform_no-alpha_-filtered-margin0.000-step2",
+        "pareto-c3-l4-uniform_no-alpha_-filtered-margin0.000-step3",
+        "pareto-c3-l4-uniform_no-alpha_-filtered-margin0.000-step4",
         #"pareto-c4-l4-truth_no-alpha_"
         # "pareto-c4-l4-truth_10alpha_"
     ]
@@ -462,11 +477,12 @@ if __name__ == "__main__":
             unique2 = 0
             unique3 = 0
 
-            for point in optimistic_front:
-                if point[0] not in scheds:
-                    scheds.add(point[0])
-                    unique += 1
-                    unique3 += 1
+            if optimistic_front is not None:
+                for point in optimistic_front:
+                    if point[0] not in scheds:
+                        scheds.add(point[0])
+                        unique += 1
+                        unique3 += 1
             for point in realizable_front:
                 if point[0] not in scheds2:
                     scheds2.add(point[0])
@@ -482,7 +498,7 @@ if __name__ == "__main__":
             drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front, 
                 true_front = true_fronts, #truth, 
                 true_costs = truth_schedules, #truth_costs, 
-                name=name, title="", bounding_box=bounding_box, prints=False, x_offset=x_offset, x_scale=x_scale, loffsets=label_offsets)
+                name=name, title="", bounding_box=bounding_box, prints=True, x_offset=x_offset, x_scale=x_scale, loffsets=label_offsets)
     else:
         colors = [
             ("#e6c7c7", "#aa3333"), #red
