@@ -116,6 +116,30 @@ def gliderScheduleCheckinCostFunction(strides, discount):
 
     return -total_cost
 
+def gliderScheduleCheckinCostFunctionMulti(strides, discount):
+    # m = g^0                                 * (g^(s_0 - 1)) + 
+    #     g^(s_0)                             * (g^(s_1 - 1)) + 
+    #     g^(s_0 + s_1)                       * (g^(s_2 - 1)) + ...
+    
+    #   [m + g^(s_0 + ... + s_f) * m + g^(s_0 + ... + s_f)^2 * m + ...]
+    #   = sum_n=0_infinity m * (g^(s_0 + ... + s_f))^n
+    #   = m / (1 - g^(s_0 + ... + s_f))
+
+    current_time = 0
+    cost = 0
+
+    for i in range(len(strides)):
+        k = strides[i]
+        stride_cost = discount**(k - 1)
+        cost += (discount**current_time) * stride_cost
+        current_time += k
+
+    a = cost
+    r = discount**current_time
+    total_cost = a / (1 - r)
+
+    return -total_cost
+
 
 def gliderMDP(maxSeparation = 4, desiredSeparation = 2, moveProb = 0.9, wallPenalty = -10, movePenalty = 0, collidePenalty = -100, desiredStateReward=5):
     gridSize = maxSeparation * 2 + 1
@@ -225,9 +249,37 @@ discount = math.sqrt(0.99)
 discount_checkin = discount
 
 
-# run(grid, mdp, discount, start_state, checkin_period=2, doBranchAndBound=False, 
+# run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=False, 
 #         drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=True, 
 #         bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None, outputDir="../output")
+
+base_strides = [1, 2, 3]
+stride_list = [[k] for k in base_strides]
+l = 3
+for i in range(l-1):
+    new_list = []
+    for k in base_strides:
+        for strides in stride_list:
+            s = list(strides)
+            s.append(k)
+            new_list.append(s)
+    stride_list = new_list
+print(stride_list)
+
+additional_schedules = []
+
+all_compMDPs = createCompositeMDPs(mdp, discount, np.max(base_strides))    
+
+for strides in stride_list:
+    _, policy_layers, value_layers, _, _ = runMultiLayer(grid, mdp, discount, start_state, strides=strides, all_compMDPs=all_compMDPs, drawPolicy=False, outputDir="../output")
+    values = value_layers[0]
+    eval_normal = gliderScheduleCheckinCostFunctionMulti(strides, discount_checkin)
+    sched = Schedule(strides=strides, pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None, is_multi_layer=True)
+    additional_schedules.append(sched)
+
+# if True:
+#     runMultiLayer(grid, mdp, discount, start_state, strides=[1, 2, 3], drawPolicy=True, outputDir="../output")
+#     exit()
 
 # if True:
 #     print(gliderScheduleCheckinCostFunction([1], discount_checkin))
@@ -297,7 +349,7 @@ print(midpoints)
 for length in lengths:
     print("\n\n  Running length",length,"\n\n")
 
-    truth_name = f"pareto-c4-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
+    truth_name = f"pareto-c3-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
     # truth_name = f"pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
     true_fronts, truth_schedules = loadTruth(truth_name, outputDir="../output")
 
@@ -311,11 +363,11 @@ for length in lengths:
         for i in range(repeats):
             running_time, error, trimmed = runChains(
                 grid, mdp, discount, discount_checkin, start_state,
-                checkin_periods=[1, 2, 3, 4],
+                checkin_periods=[1, 2, 3],
                 chain_length=length,
-                do_filter = False,
+                do_filter = True,
                 margin = margin,
-                distName = 'truth' + alphas_name,
+                distName = 'uniform-e' + alphas_name,
                 startName = '',
                 distributions = distributions, 
                 initialDistribution = initialDistribution,
@@ -325,7 +377,8 @@ for length in lengths:
                 drawIntermediate=True,
                 midpoints = midpoints, 
                 outputDir = "../output", 
-                checkinCostFunction = gliderScheduleCheckinCostFunction)
+                checkinCostFunction = gliderScheduleCheckinCostFunction, 
+                additional_schedules = additional_schedules)
 
             running_time_avg += running_time
         running_time_avg /= repeats

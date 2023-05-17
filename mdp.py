@@ -26,7 +26,7 @@ import os
 import time
 import math
 
-from lp import linearProgrammingSolve
+from lp import linearProgrammingSolve, linearProgrammingSolveMultiLayer
 from figure import drawParetoFront, loadDataChains, loadTruth
 
 class MDP:
@@ -1057,6 +1057,46 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound,
     #         print(s,action,"->",end_state,"is",compMDP.transitions[s][action][end_state])
 
     return values[start_state], policy, elapsed, compMDP
+
+
+
+def runMultiLayer(grid, mdp, discount, start_state, strides, all_compMDPs=None, drawPolicy=True, outputDir="output"):
+    policy = None
+    values = None
+    
+    start = time.time()
+    elapsed = None
+
+    if all_compMDPs is None:
+        all_compMDPs = createCompositeMDPs(mdp, discount, np.max(strides))    
+    
+    compMDPs = [all_compMDPs[k - 1] for k in strides]
+    
+    discount_t = [pow(discount, k) for k in strides]
+
+    print("MDP composite time:", time.time() - start)
+
+    restricted_action_set = None
+
+    l1 = time.time()
+    policy_layers, value_layers = linearProgrammingSolveMultiLayer(grid, compMDPs, discount_t, restricted_action_set = restricted_action_set)
+    
+    print("MDP linear programming time:", time.time() - l1)
+    
+    elapsed = time.time() - start
+    print("MDP total time:", elapsed)
+
+    print("Start state value:",value_layers[0][start_state])
+
+    if drawPolicy:
+        name = "".join([str(k) for k in strides])
+        for i in range(len(strides)):
+            compMDP = compMDPs[i]
+            values = value_layers[i]
+            policy = policy_layers[i]
+            draw(grid, compMDP, values, policy, True, False, f"{outputDir}/policy-multi-({name})*-{i}-lp")
+    
+    return value_layers[0][start_state], policy_layers, value_layers, elapsed, compMDPs
 
 
 
@@ -2608,7 +2648,7 @@ def getData(mdp, schedules, initialDistribution, isMultiplePolicies):
 def runChains(grid, mdp, discount, discount_checkin, start_state, 
     checkin_periods, chain_length, do_filter, margin, distName, startName, 
     distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints, 
-    outputDir="output", checkinCostFunction=None):
+    outputDir="output", checkinCostFunction=None, additional_schedules=[]):
         
     midpoints.sort(reverse=True)
 
@@ -2646,6 +2686,8 @@ def runChains(grid, mdp, discount, discount_checkin, start_state,
         midpoints=midpoints, 
         outputDir=outputDir, 
         checkinCostFunction=checkinCostFunction)
+    
+    schedules.extend(additional_schedules)
 
     numRemaining = len(schedules)# / 3 #because 3 points in each L
     numWouldBeTotal = pow(len(checkin_periods), chain_length)

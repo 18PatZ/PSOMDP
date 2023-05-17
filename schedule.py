@@ -2,11 +2,12 @@ import numpy as np
 
 class Schedule:
     
-    def __init__(self, strides, pi_exec_data, pi_checkin_data, pi_mid_data):
+    def __init__(self, strides, pi_exec_data, pi_checkin_data, pi_mid_data, is_multi_layer=False):
         self.strides = strides
         self.pi_exec_data = pi_exec_data
         self.pi_checkin_data = pi_checkin_data
         self.pi_mid_data = pi_mid_data
+        self.is_multi_layer = is_multi_layer
 
         self.set_bounds()
 
@@ -14,7 +15,11 @@ class Schedule:
         name = ""
         for checkin in self.strides:
             name += str(checkin)
-        name += "*"
+
+        if self.is_multi_layer:
+            name = f"({name})*"
+        else:
+            name += "*"
         return name
 
     def set_upper_bound(self):
