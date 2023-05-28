@@ -134,7 +134,7 @@ def scatter(ax, points, doLabel, color, lcolor, arrows=False, x_offset = 0, x_sc
             nearest_d2 = elide_dist + 1.0
             for j in range(len(labels)):
                 nearest_d2 = min(nearest_d2, ((1.0/deltax)*(x_full[i] - x[j]))**2 + ((1.0/deltay)*(y_full[i] - y[j]))**2 )
-            if nearest_d2 >= elide_dist:
+            if nearest_d2 >= elide_dist or len(labels_full[i]) == 2 or labels_full[i] == "332*": # include 1, 2, 3 etc.
                 # Should NOT drop i:
                 x.append(x_full[i])
                 y.append(y_full[i])
@@ -190,8 +190,9 @@ def finishPlot(font, name, bounding_box, x_offset, x_scale, outputDir="output"):
     plt.ylabel(r"\textbf{Checkin Cost}", fontproperties=font, fontweight='bold')
     #plt.title(title)
     
-    plt.xlim((bounding_box[0] + x_offset) * x_scale)
-    plt.ylim(bounding_box[1])
+    if bounding_box is not None:
+        plt.xlim((bounding_box[0] + x_offset) * x_scale)
+        plt.ylim(bounding_box[1])
 
     #plt.gcf().set_size_inches(10, 10)
     plt.gcf().set_size_inches(10, 7)
@@ -200,6 +201,25 @@ def finishPlot(font, name, bounding_box, x_offset, x_scale, outputDir="output"):
     plt.savefig(f'{outputDir}/{name}.pdf', format="pdf",  pad_inches=0.0, dpi=600)
     # plt.savefig(f'output/{name}.png', bbox_inches='tight', pad_inches=0.5, dpi=300)
     # plt.show()
+
+
+def drawScalarizationLine(schedules, ax, anchor, alpha):
+    # draw scalarization line
+    pt = None
+    for sched in schedules:
+        if sched.name == anchor:
+            pt = sched.upper_bound[0]
+    if pt is not None:
+        # scalarized = alpha * exec_cost + (1 - alpha) * checkin_cost
+        # line is constant scalarization:
+        #   C = ax + (1 - a) y
+        #   y = (C - ax) / (1 - a)
+        C = alpha * pt[0] + (1 - alpha) * pt[1]
+        y = lambda x: (C - alpha * x) / (1 - alpha)
+        pt0 = ((bounding_box[0][0] + x_offset) * x_scale, y(bounding_box[0][0]))
+        pt1 = ((bounding_box[0][1] + x_offset) * x_scale, y(bounding_box[0][1]))
+
+        ax.plot([pt0[0], pt1[0]], [pt0[1], pt1[1]], c="green", linewidth=0.5, alpha=0.5)
 
 
 def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front, true_front, 
@@ -224,6 +244,7 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
             scheds_nondominated.append(schedules[i])
         else:
             scheds_dominated.append(schedules[i])
+    
 
 
     # num_efficient_schedules = 0
@@ -257,6 +278,9 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
     
     fig, ax = plt.subplots()
 
+
+    
+
     # draw truth (old)
     # if true_costs is not None:
     #     scatter(ax, true_costs, doLabel=False, color="gainsboro", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
@@ -288,7 +312,7 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
         if prints:
             print("Realizable front actual bounds", [[min[0], max[0]], [min[1], max[1]]])
 
-        manhattan_lines(ax, realizable_front, color="#aa3333", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed")
+        manhattan_lines(ax, realizable_front, color="#aa3333", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed", linethickness=0.5)
         # manhattan_lines(ax, realizable_front, color="#aa3333", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#c7e6d0")
         scatter(ax, realizable_front, doLabel=True, color="blue", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
 
@@ -306,8 +330,8 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
         for b in sched.upper_bound:
             schedule_points.append([sched.name, b])
 
-        # drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
-        #scatter(ax, schedule_points, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
+        drawLdominated(ax, schedule_points, bounding_box=bounding_box, color="#222222", face_color="#aaaaaa", x_offset=x_offset, x_scale=x_scale)
+        # scatter(ax, schedule_points, doLabel=True, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
 
     for sched in scheds_nondominated:
         schedule_points = []
@@ -323,6 +347,10 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
         #drawL(ax, schedule_points, bounding_box=bounding_box, color="#ff2222", face_color="#ff2222", x_offset=x_offset, x_scale=x_scale)
         #scatter(ax, schedule_points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
+    # alpha = 0.53
+    # drawScalarizationLine(schedules, ax, anchor="332*", alpha=alpha)
+    # drawScalarizationLine(schedules, ax, anchor="3*", alpha=alpha)
+    # drawScalarizationLine(schedules, ax, anchor="1*", alpha=alpha)
 
     finishPlot(font, name, bounding_box, x_offset, x_scale, outputDir)
     plt.close(fig)
@@ -390,6 +418,9 @@ def loadDataChains(filename, outputDir="output"):
         
         schedules = [ScheduleBounds(sched) for sched in obj['Schedules']]
 
+        # realizable_front = [r for r in realizable_front if "2*" in r[0]]
+        # schedules = [s for s in schedules if "2*" in s.name]
+
         return (schedules, obj['Efficient'], optimistic_front, realizable_front)#, truth, truth_costs)
 
 
@@ -420,12 +451,16 @@ if __name__ == "__main__":
     #bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
     #bounding_box = np.array([[-1.56e6, -1e6], [0.0001, 30]])
     # bounding_box = np.array([[-1.56e6, -1.04e6], [5.0001, 28]])
-    bounding_box = np.array([[-1000, -900], [0.0001, 300]])
+    # bounding_box = np.array([[-1000, -900], [0.0001, 300]])
+    bounding_box = np.array([[-952.2795210898702, -949.436449420723], [97.07854114027103, 101.9800249998421]])
+    
+    # bounding_box = np.array([[-18, -15], [0.0001, 5]])
+    # bounding_box = np.array([[-51, -44], [0.0001, 15]])
 
     x_offset = 1.56e6
     x_scale = 1/1000
 
-    truth_name = "pareto-c3-l4-truth_no-alpha_"
+    truth_name = None#"pareto-c3-l4-truth_no-alpha_"
 
     names = [
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step1",
@@ -438,10 +473,7 @@ if __name__ == "__main__":
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step8",
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step14",
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step16",
-        "pareto-c3-l4-uniform_no-alpha_-filtered-margin0.000-step1",
-        "pareto-c3-l4-uniform_no-alpha_-filtered-margin0.000-step2",
-        "pareto-c3-l4-uniform_no-alpha_-filtered-margin0.000-step3",
-        "pareto-c3-l4-uniform_no-alpha_-filtered-margin0.000-step4",
+        "pareto-c3-l8-truth_no-alpha_-step6",
         #"pareto-c4-l4-truth_no-alpha_"
         # "pareto-c4-l4-truth_10alpha_"
     ]

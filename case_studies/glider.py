@@ -166,9 +166,9 @@ def gliderMDP(maxSeparation = 4, desiredSeparation = 2, moveProb = 0.9, wallPena
 
     # we have the glider always moving to the right. "Left" means it goes diagonally. TODO variable speeds
     glider1_actions = {
-        "LEFT": (1, -1), 
-        "FORWARD": (1, 0), 
         "DOUBLE": (2, 0), 
+        "FORWARD": (1, 0), 
+        "LEFT": (1, -1), 
         "RIGHT": (1, 1)
     }
 
@@ -234,158 +234,173 @@ def gliderMDP(maxSeparation = 4, desiredSeparation = 2, moveProb = 0.9, wallPena
 
 
 
-# start = time.time()
-
-grid, mdp, start_state = gliderMDP(
-    maxSeparation = 4, 
-    desiredSeparation = 2, 
-    moveProb = 0.9, 
-    wallPenalty = -10, 
-    movePenalty = 0, 
-    collidePenalty = -100, 
-    desiredStateReward=5)
-
-discount = math.sqrt(0.99)
-discount_checkin = discount
 
 
-# run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=False, 
-#         drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=True, 
-#         bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None, outputDir="../output")
+def runPareto(grid, mdp, start_state, discount, discount_checkin):
+    additional_schedules = []
 
-base_strides = [1, 2, 3]
-stride_list = [[k] for k in base_strides]
-l = 3
-for i in range(l-1):
-    new_list = []
-    for k in base_strides:
-        for strides in stride_list:
-            s = list(strides)
-            s.append(k)
-            new_list.append(s)
-    stride_list = new_list
-print(stride_list)
+    # base_strides = [1, 2, 3, 4]
+    # stride_list = [[k] for k in base_strides]
+    # l = 4
+    # for i in range(l-1):
+    #     new_list = []
+    #     for k in base_strides:
+    #         for strides in stride_list:
+    #             s = list(strides)
+    #             s.append(k)
+    #             new_list.append(s)
+    #     stride_list = new_list
+    # print(stride_list)
 
-additional_schedules = []
 
-all_compMDPs = createCompositeMDPs(mdp, discount, np.max(base_strides))    
 
-for strides in stride_list:
-    _, policy_layers, value_layers, _, _ = runMultiLayer(grid, mdp, discount, start_state, strides=strides, all_compMDPs=all_compMDPs, drawPolicy=False, outputDir="../output")
-    values = value_layers[0]
-    eval_normal = gliderScheduleCheckinCostFunctionMulti(strides, discount_checkin)
-    sched = Schedule(strides=strides, pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None, is_multi_layer=True)
-    additional_schedules.append(sched)
+    # all_compMDPs = createCompositeMDPs(mdp, discount, np.max(base_strides))    
 
-# if True:
-#     runMultiLayer(grid, mdp, discount, start_state, strides=[1, 2, 3], drawPolicy=True, outputDir="../output")
-#     exit()
+    # for strides in stride_list:
+    #     _, policy_layers, value_layers, _, _ = runMultiLayer(grid, mdp, discount, start_state, strides=strides, all_compMDPs=all_compMDPs, drawPolicy=False, outputDir="../output")
+    #     values = value_layers[0]
+    #     eval_normal = gliderScheduleCheckinCostFunctionMulti(strides, discount_checkin)
+    #     sched = Schedule(strides=strides, pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None, is_multi_layer=True)
+    #     additional_schedules.append(sched)
 
-# if True:
-#     print(gliderScheduleCheckinCostFunction([1], discount_checkin))
-#     exit()
 
-# bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
-bounding_box = np.array([[-1000, -900], [0.0001, 300]])
+    # if True:
+    #     runMultiLayer(grid, mdp, discount, start_state, strides=[1, 2, 3], drawPolicy=True, outputDir="../output")
+    #     exit()
 
-start_state_index = mdp.states.index(start_state)
+    # if True:
+    #     print(gliderScheduleCheckinCostFunction([1], discount_checkin))
+    #     exit()
 
-distributions = []
-    
-distStart = []
-for i in range(len(mdp.states)):
-    distStart.append(1 if i == start_state_index else 0)
-# distributions.append(distStart)
+    # bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
+    # bounding_box = np.array([[-1000, -900], [0.0001, 300]])
+    bounding_box = np.array([[-1000, -900], [0.0001, 300]])
 
-distributions.append(uniform(mdp))
-# distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
-# distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
-# distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
 
-initialDistribution = dirac(mdp, start_state)
-# initialDistribution = dirac(mdp, (start_state[0]-1, start_state[1]))
-# initialDistribution = dirac(mdp, (start_state[0]+1, start_state[1]))
-# initialDistribution = dirac(mdp, (start_state[0], start_state[1]-1))
-# initialDistribution = dirac(mdp, (start_state[0], start_state[1]+1))
-initialDistributionCombo = \
-    0.5 * np.array(dirac(mdp, start_state)) + \
-    0.125 * np.array(dirac(mdp, (start_state[0]-1, start_state[1]))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0]+1, start_state[1]))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]-1))) + \
-    0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]+1)))
+    start_state_index = mdp.states.index(start_state)
 
-# distributions.append(initialDistributionCombo)
-# distributions.append(initialDistribution)
-# initialDistribution = initialDistributionCombo
+    distributions = []
+        
+    distStart = []
+    for i in range(len(mdp.states)):
+        distStart.append(1 if i == start_state_index else 0)
+    # distributions.append(distStart)
 
-# margins = np.arange(0.01, 0.0251, 0.005)
-# margins = [0.04]
-margins = [0]
-# margins = [0.015]
+    distributions.append(uniform(mdp))
+    # distributions.append(gaussian(mdp, center_state=start_state, sigma=4))
+    # distributions.append(gaussian(mdp, center_state=start_state, sigma=10))
+    # distributions.append(gaussian(mdp, center_state=target_state, sigma=4))
 
-lengths = [4]#[1, 2, 3, 4, 5, 6, 7]
+    initialDistribution = dirac(mdp, start_state)
+    # initialDistribution = dirac(mdp, (start_state[0]-1, start_state[1]))
+    # initialDistribution = dirac(mdp, (start_state[0]+1, start_state[1]))
+    # initialDistribution = dirac(mdp, (start_state[0], start_state[1]-1))
+    # initialDistribution = dirac(mdp, (start_state[0], start_state[1]+1))
+    initialDistributionCombo = \
+        0.5 * np.array(dirac(mdp, start_state)) + \
+        0.125 * np.array(dirac(mdp, (start_state[0]-1, start_state[1]))) + \
+        0.125 * np.array(dirac(mdp, (start_state[0]+1, start_state[1]))) + \
+        0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]-1))) + \
+        0.125 * np.array(dirac(mdp, (start_state[0], start_state[1]+1)))
 
-repeats = 1
-results = []
+    # distributions.append(initialDistributionCombo)
+    # distributions.append(initialDistribution)
+    # initialDistribution = initialDistributionCombo
 
-scaling_factor = 9.69/1.47e6 # y / x
-# scaling_factor = (8.476030558294275 - 6.868081239897704) / (1410952.6446555236 - 1076057.2978729124)
+    # margins = np.arange(0.01, 0.0251, 0.005)
+    # margins = [0.04]
+    margins = [0]
+    # margins = [0.015]
 
-# midpoints = [0.25, 0.375, 0.5, 0.75]
-midpoints = []
-# midpoints = [0.2, 0.4, 0.6, 0.8]
-n = 10
-# midpoints = [1.0/(2**x) for x in range(n-1,0,-1)]
-# midpoints = list(np.arange(0.1, 1, 0.1))
-midpoints = [getAdjustedAlphaValue(m, scaling_factor) for m in midpoints]
+    lengths = [8]#[1, 2, 3, 4, 5, 6, 7]
 
-alphas_name = "_no-alpha_"
-# alphas_name = "_4alpha_"
-# alphas_name = "_4e-alpha_"
-# alphas_name = "_10alpha_"
+    repeats = 1
+    results = []
 
-print(midpoints)
+    scaling_factor = 9.69/1.47e6 # y / x
+    # scaling_factor = (8.476030558294275 - 6.868081239897704) / (1410952.6446555236 - 1076057.2978729124)
 
-for length in lengths:
-    print("\n\n  Running length",length,"\n\n")
+    # midpoints = [0.25, 0.375, 0.5, 0.75]
+    midpoints = []
+    # midpoints = [0.2, 0.4, 0.6, 0.8]
+    n = 10
+    # midpoints = [1.0/(2**x) for x in range(n-1,0,-1)]
+    # midpoints = list(np.arange(0.1, 1, 0.1))
+    midpoints = [getAdjustedAlphaValue(m, scaling_factor) for m in midpoints]
 
-    truth_name = f"pareto-c3-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
-    # truth_name = f"pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
-    true_fronts, truth_schedules = loadTruth(truth_name, outputDir="../output")
+    alphas_name = "_no-alpha_"
+    # alphas_name = "_4alpha_"
+    # alphas_name = "_4e-alpha_"
+    # alphas_name = "_10alpha_"
 
-    for margin in margins:
-        print("\n\n  Running margin",margin,"\n\n")
+    print(midpoints)
 
-        running_time_avg = 0
-        error = -1
-        trimmed = 0
+    for length in lengths:
+        print("\n\n  Running length",length,"\n\n")
 
-        for i in range(repeats):
-            running_time, error, trimmed = runChains(
-                grid, mdp, discount, discount_checkin, start_state,
-                checkin_periods=[1, 2, 3],
-                chain_length=length,
-                do_filter = True,
-                margin = margin,
-                distName = 'uniform-e' + alphas_name,
-                startName = '',
-                distributions = distributions, 
-                initialDistribution = initialDistribution,
-                bounding_box = bounding_box, 
-                TRUTH = true_fronts,
-                TRUTH_COSTS = truth_schedules,
-                drawIntermediate=True,
-                midpoints = midpoints, 
-                outputDir = "../output", 
-                checkinCostFunction = gliderScheduleCheckinCostFunction, 
-                additional_schedules = additional_schedules)
+        truth_name = None#f"pareto-c3-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
+        # truth_name = f"pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
+        true_fronts, truth_schedules = loadTruth(truth_name, outputDir="../output")
 
-            running_time_avg += running_time
-        running_time_avg /= repeats
+        for margin in margins:
+            print("\n\n  Running margin",margin,"\n\n")
 
-        quality = (1 - error) * 100
-        quality_upper = (1 - error) * 100
-        results.append((margin, running_time_avg, quality, trimmed, quality_upper))
-        print("\nRESULTS:\n")
-        for r in results:
-            print(str(r[0])+","+str(r[1])+","+str(r[2])+","+str(r[3]))
+            running_time_avg = 0
+            error = -1
+            trimmed = 0
+
+            for i in range(repeats):
+                running_time, error, trimmed = runChains(
+                    grid, mdp, discount, discount_checkin, start_state,
+                    checkin_periods=[1, 2, 3],
+                    chain_length=length,
+                    do_filter = False,
+                    margin = margin,
+                    distName = 'truth' + alphas_name,
+                    startName = '',
+                    distributions = distributions, 
+                    initialDistribution = initialDistribution,
+                    bounding_box = bounding_box, 
+                    TRUTH = true_fronts,
+                    TRUTH_COSTS = truth_schedules,
+                    drawIntermediate=True,
+                    midpoints = midpoints, 
+                    outputDir = "../output", 
+                    checkinCostFunction = gliderScheduleCheckinCostFunction, 
+                    additional_schedules = additional_schedules)
+
+                running_time_avg += running_time
+            running_time_avg /= repeats
+
+            quality = (1 - error) * 100
+            quality_upper = (1 - error) * 100
+            results.append((margin, running_time_avg, quality, trimmed, quality_upper))
+            print("\nRESULTS:\n")
+            for r in results:
+                print(str(r[0])+","+str(r[1])+","+str(r[2])+","+str(r[3]))
+
+
+
+
+if __name__ == '__main__':
+
+    # start = time.time()
+
+    grid, mdp, start_state = gliderMDP(
+        maxSeparation = 4, 
+        desiredSeparation = 2, 
+        moveProb = 0.9, 
+        wallPenalty = -10, 
+        movePenalty = 0, 
+        collidePenalty = -100, 
+        desiredStateReward=5)
+
+    discount = math.sqrt(0.99)
+    discount_checkin = discount
+
+
+    # run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=False, 
+    #         drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=True, 
+    #         bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None, outputDir="../output")
+
+    runPareto(grid, mdp, start_state, discount, discount_checkin)
