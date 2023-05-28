@@ -28,7 +28,7 @@ def makeConstraint(mdp, discount, lp, vS, vE, state, action, is_negative):
 def makeConstraintsList(mdp, discount, lp, vS, vE, restricted_action_set, is_negative):
     return [makeConstraint(mdp, discount, lp, vS, vE, state, action, is_negative) for state in mdp.states for action in (mdp.actions if restricted_action_set is None else restricted_action_set[state]) if action in mdp.transitions[state]]
 
-def linearProgrammingSolve(grid, mdp, discount, restricted_action_set = None, is_negative = False):
+def linearProgrammingSolve(mdp, discount, restricted_action_set = None, is_negative = False):
 
     time_start = time.time()
 
@@ -92,7 +92,7 @@ def linearProgrammingSolve(grid, mdp, discount, restricted_action_set = None, is
 
     return policy, values
 
-def linearProgrammingSolveMultiLayer(grid, mdps, discounts, restricted_action_set = None, is_negative = False):
+def linearProgrammingSolveMultiLayer(mdps, discounts, restricted_action_set = None, is_negative = False):
 
     time_start = time.time()
 

@@ -312,7 +312,9 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
     margins = [0]
     # margins = [0.015]
 
-    lengths = [8]#[1, 2, 3, 4, 5, 6, 7]
+    lengths = [4]#[1, 2, 3, 4, 5, 6, 7]
+
+    recurring = True
 
     repeats = 1
     results = []
@@ -338,7 +340,7 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
     for length in lengths:
         print("\n\n  Running length",length,"\n\n")
 
-        truth_name = None#f"pareto-c3-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
+        truth_name = f"pareto-c3-l8-truth_no-alpha_-step{length}"#None#f"pareto-c3-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
         # truth_name = f"pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
         true_fronts, truth_schedules = loadTruth(truth_name, outputDir="../output")
 
@@ -356,7 +358,7 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
                     chain_length=length,
                     do_filter = False,
                     margin = margin,
-                    distName = 'truth' + alphas_name,
+                    distName = 'truth' + ('-recc' if recurring else '') + alphas_name,
                     startName = '',
                     distributions = distributions, 
                     initialDistribution = initialDistribution,
@@ -366,8 +368,9 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
                     drawIntermediate=True,
                     midpoints = midpoints, 
                     outputDir = "../output", 
-                    checkinCostFunction = gliderScheduleCheckinCostFunction, 
-                    additional_schedules = additional_schedules)
+                    checkinCostFunction = gliderScheduleCheckinCostFunctionMulti if recurring else gliderScheduleCheckinCostFunction,
+                    additional_schedules = additional_schedules,
+                    recurring=recurring)
 
                 running_time_avg += running_time
             running_time_avg /= repeats

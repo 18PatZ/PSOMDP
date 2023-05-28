@@ -826,7 +826,7 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
 
             discount_input = pow(discount, t)
             if doLinearProg:
-                policy, values = linearProgrammingSolve(grid, compMDP, discount_input, pruned_action_set)
+                policy, values = linearProgrammingSolve(compMDP, discount_input, pruned_action_set)
                 q_values = qValuesFromR(compMDP, discount_input, values, pruned_action_set)
             else:
                 policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
@@ -847,7 +847,7 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
 
         discount_input = pow(discount, checkin_period)
         if doLinearProg:
-            policy, state_values = linearProgrammingSolve(grid, compMDP, discount_input, pruned_action_set)
+            policy, state_values = linearProgrammingSolve(compMDP, discount_input, pruned_action_set)
             q_values = qValuesFromR(compMDP, discount_input, state_values, pruned_action_set)
         else:
             policy, state_values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
@@ -905,7 +905,7 @@ def branchAndBound(grid, base_mdp, discount, checkin_period, threshold, max_iter
 
     start = time.time()
     if doLinearProg:
-        policy, values = linearProgrammingSolve(grid, compMDP, discount_input, pruned_action_set)
+        policy, values = linearProgrammingSolve(compMDP, discount_input, pruned_action_set)
         q_values = qValuesFromR(compMDP, discount_input, values, pruned_action_set)
     else:
         policy, values, q_values = qValueIteration(grid, compMDP, discount_input, threshold, max_iterations, pruned_action_set)
@@ -1000,7 +1000,7 @@ def run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound,
 
         if doLinearProg:
             l1 = time.time()
-            policy, values = linearProgrammingSolve(grid, compMDP, discount_t, restricted_action_set = restricted_action_set)
+            policy, values = linearProgrammingSolve(compMDP, discount_t, restricted_action_set = restricted_action_set)
             
             end2 = time.time()
             print("MDP linear programming time:", end2 - l1)
@@ -1079,7 +1079,7 @@ def runMultiLayer(grid, mdp, discount, start_state, strides, all_compMDPs=None, 
     restricted_action_set = None
 
     l1 = time.time()
-    policy_layers, value_layers = linearProgrammingSolveMultiLayer(grid, compMDPs, discount_t, restricted_action_set = restricted_action_set)
+    policy_layers, value_layers = linearProgrammingSolveMultiLayer(compMDPs, discount_t, restricted_action_set = restricted_action_set)
     
     print("MDP linear programming time:", time.time() - l1)
     
@@ -1723,17 +1723,39 @@ def mixedPolicy(values1, values2, compMDP1, compMDP2, alpha, discount):
 #     return policy_blend
 
 
-def createChainTail(grid, mdp, discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction):
+def createRecurringChain(discount, discount_checkin, compMDPs, greedyCompMDPs, strides, midpoints, checkinCostFunction):
+    discount_ts = [pow(discount, k) for k in strides]
+    discount_c_ts = [pow(discount_checkin, k) for k in strides]
+
+    stride_compMDPs = [compMDPs[k] for k in strides]
+
+    policy_layers, value_layers = linearProgrammingSolveMultiLayer(stride_compMDPs, discount_ts)
+
+    if checkinCostFunction is None:
+        stride_compMDPs_greedy = [greedyCompMDPs[k] for k in strides]
+        policy_layers_greedy, value_layers_greedy = linearProgrammingSolveMultiLayer(stride_compMDPs_greedy, discount_c_ts, is_negative=True)
+        # TODO policy evaluation on multi-layer
+        print("TODO recurring chain without fixed cost function is WIP")
+        exit()
+    else:
+        values = value_layers[0]
+        eval_normal = checkinCostFunction(strides, discount_checkin)
+        sched = Schedule(strides=strides, pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None, is_multi_layer=True)
+
+    return sched
+
+
+def createChainTail(discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction):
     discount_t = pow(discount, k)
     discount_c_t = pow(discount_checkin, k)
     compMDP = compMDPs[k]
 
-    policy, values = linearProgrammingSolve(grid, compMDP, discount_t)
+    policy, values = linearProgrammingSolve(compMDP, discount_t)
     
     if checkinCostFunction is None:
         greedyMDP = greedyCompMDPs[k]
     
-        policy_greedy, values_greedy = linearProgrammingSolve(grid, greedyMDP, discount_c_t, restricted_action_set=None, is_negative=True) # we know values are negative, LP & simplex method doesn't work with negative decision variables so we flip 
+        policy_greedy, values_greedy = linearProgrammingSolve(greedyMDP, discount_c_t, restricted_action_set=None, is_negative=True) # we know values are negative, LP & simplex method doesn't work with negative decision variables so we flip 
         
         eval_normal = policyEvaluation(greedyMDP, policy, discount_c_t)
         eval_greedy = policyEvaluation(compMDP, policy_greedy, discount_t)
@@ -1811,7 +1833,7 @@ def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, sched, k, 
 
 
 def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompMDPs, discount, discount_checkin, checkin_periods, 
-                      do_filter, distributions, margin, bounding_box, midpoints, checkinCostFunction):
+                      do_filter, distributions, margin, bounding_box, midpoints, checkinCostFunction, recurring):
     chains = []
     previous_chains = chains_list[stage - 1]
 
@@ -1820,7 +1842,12 @@ def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompM
             if stage == 1 and k == tail.strides[0]:
                 continue # don't duplicate recurring tail value (e.g. 23* and 233*)
             
-            new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k, midpoints, checkinCostFunction)
+            if recurring:
+                strides = list(tail.strides)
+                strides.insert(0, k)
+                new_chain = createRecurringChain(discount, discount_checkin, compMDPs, greedyCompMDPs, strides, midpoints, checkinCostFunction)
+            else:
+                new_chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, tail, k, midpoints, checkinCostFunction)
             chains.append(new_chain)
             all_chains.append(new_chain)
     
@@ -1844,7 +1871,7 @@ def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompM
 
 def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, 
                          checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, 
-                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir, checkinCostFunction):
+                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir, checkinCostFunction, recurring):
     print("Compositing MDPs")
     c_start = time.time()
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
@@ -1877,7 +1904,10 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state,
     l = 1
     
     for k in checkin_periods:
-        chain = createChainTail(grid, mdp, discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction)
+        if recurring:
+            chain = createRecurringChain(discount, discount_checkin, compMDPs, greedyCompMDPs, [k], midpoints, checkinCostFunction)
+        else:
+            chain = createChainTail(discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction)
         chains_list[0].append(chain)
         all_chains.append(chain)
 
@@ -1903,7 +1933,7 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state,
 
         all_chains = runExtensionStage(mdp, i, chains_list, all_chains, compMDPs, greedyCompMDPs, 
                                        discount, discount_checkin, checkin_periods, do_filter, distributions, margin, 
-                                       bounding_box, midpoints, checkinCostFunction)
+                                       bounding_box, midpoints, checkinCostFunction, recurring)
 
         if drawIntermediate:
             drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir, isMultiplePolicies)
@@ -2476,7 +2506,7 @@ def drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_s
     greedyCompMDPs = {k: convertCompToCheckinMDP(grid, compMDPs[k], k, discount_checkin) for k in checkin_periods}
 
     i = len(chain_checkins) - 1
-    chain = createChainTail(grid, mdp, discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, chain_checkins[i])
+    chain = createChainTail(discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, chain_checkins[i])
     while i >= 0:
         chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, chain_checkins[i])
         i -= 1
@@ -2648,7 +2678,7 @@ def getData(mdp, schedules, initialDistribution, isMultiplePolicies):
 def runChains(grid, mdp, discount, discount_checkin, start_state, 
     checkin_periods, chain_length, do_filter, margin, distName, startName, 
     distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints, 
-    outputDir="output", checkinCostFunction=None, additional_schedules=[]):
+    outputDir="output", checkinCostFunction=None, recurring=False, additional_schedules=[]):
         
     midpoints.sort(reverse=True)
 
@@ -2685,7 +2715,8 @@ def runChains(grid, mdp, discount, discount_checkin, start_state,
         title=title,
         midpoints=midpoints, 
         outputDir=outputDir, 
-        checkinCostFunction=checkinCostFunction)
+        checkinCostFunction=checkinCostFunction,
+        recurring=recurring)
     
     schedules.extend(additional_schedules)
 
