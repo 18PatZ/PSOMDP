@@ -307,12 +307,25 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
     # distributions.append(initialDistribution)
     # initialDistribution = initialDistributionCombo
 
+
+    initialLength = 3
+    initialSchedules = []
+    initialName = "pareto-c3-l4-truth-recc_no-alpha_-step2"
+    initSchedBounds, _, _, _ = loadDataChains(initialName, outputDir="../output")
+    for bound in initSchedBounds:
+        strides = []
+        for i in range(1, len(bound.name)-2):
+            strides.append(int(bound.name[i]))
+        sched = Schedule(strides=strides, pi_exec_data=None, pi_checkin_data=None, pi_mid_data=None, is_multi_layer=True)
+        initialSchedules.append(sched)
+
+
     # margins = np.arange(0.01, 0.0251, 0.005)
     # margins = [0.04]
     margins = [0]
     # margins = [0.015]
 
-    lengths = [4]#[1, 2, 3, 4, 5, 6, 7]
+    lengths = [8]#[1, 2, 3, 4, 5, 6, 7]
 
     recurring = True
 
@@ -370,7 +383,9 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
                     outputDir = "../output", 
                     checkinCostFunction = gliderScheduleCheckinCostFunctionMulti if recurring else gliderScheduleCheckinCostFunction,
                     additional_schedules = additional_schedules,
-                    recurring=recurring)
+                    recurring=recurring, 
+                    initialLength=initialLength, 
+                    initialSchedules=initialSchedules)
 
                 running_time_avg += running_time
             running_time_avg /= repeats

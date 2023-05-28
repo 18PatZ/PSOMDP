@@ -1871,7 +1871,7 @@ def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompM
 
 def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, 
                          checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, 
-                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir, checkinCostFunction, recurring):
+                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir, checkinCostFunction, recurring, initialLength, initialSchedules):
     print("Compositing MDPs")
     c_start = time.time()
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
@@ -1901,26 +1901,26 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state,
     chains_list.append([])
     # chains_list_upper.append([])
 
-    l = 1
-    
-    for k in checkin_periods:
-        if recurring:
-            chain = createRecurringChain(discount, discount_checkin, compMDPs, greedyCompMDPs, [k], midpoints, checkinCostFunction)
-        else:
-            chain = createChainTail(discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction)
-        chains_list[0].append(chain)
-        all_chains.append(chain)
+    if initialLength <= 1:
+        l = 1
+        
+        for k in checkin_periods:
+            if recurring:
+                chain = createRecurringChain(discount, discount_checkin, compMDPs, greedyCompMDPs, [k], midpoints, checkinCostFunction)
+            else:
+                chain = createChainTail(discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction)
+            chains_list[0].append(chain)
+            all_chains.append(chain)
 
-        # chains_list_upper[0].append(chain)
-        # all_chains_upper.append(chain)
+        if drawIntermediate:
+            drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir, isMultiplePolicies)
+        
+    else:
+        l = initialLength-1
+        for sched in initialSchedules:
+            # all_chains.append(sched)
+            chains_list[0].append(sched)
 
-    # if True:
-    # print(getStartParetoValues(mdp, all_chains_upper, initialDistribution, is_lower_bound=False))
-    #     exit()
-
-
-    if drawIntermediate:
-        drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir, isMultiplePolicies)
 
 
     print("--------")
@@ -1928,13 +1928,13 @@ def calculateChainValues(grid, mdp, discount, discount_checkin, start_state,
     # print(len(all_chains_upper),"current upper bound chains")
     # print("Current chains: " + chains_to_str(all_chains))
 
-    for i in range(1, chain_length):
+    for i in range(l, chain_length):
         l += 1
 
         all_chains = runExtensionStage(mdp, i, chains_list, all_chains, compMDPs, greedyCompMDPs, 
                                        discount, discount_checkin, checkin_periods, do_filter, distributions, margin, 
                                        bounding_box, midpoints, checkinCostFunction, recurring)
-
+        
         if drawIntermediate:
             drawParetoStep(mdp, all_chains, initialDistribution, TRUTH, TRUTH_COSTS, name, title, l, bounding_box, outputDir, isMultiplePolicies)
 
@@ -2678,7 +2678,7 @@ def getData(mdp, schedules, initialDistribution, isMultiplePolicies):
 def runChains(grid, mdp, discount, discount_checkin, start_state, 
     checkin_periods, chain_length, do_filter, margin, distName, startName, 
     distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints, 
-    outputDir="output", checkinCostFunction=None, recurring=False, additional_schedules=[]):
+    outputDir="output", checkinCostFunction=None, recurring=False, additional_schedules=[], initialLength=1, initialSchedules=[]):
         
     midpoints.sort(reverse=True)
 
@@ -2716,7 +2716,9 @@ def runChains(grid, mdp, discount, discount_checkin, start_state,
         midpoints=midpoints, 
         outputDir=outputDir, 
         checkinCostFunction=checkinCostFunction,
-        recurring=recurring)
+        recurring=recurring, 
+        initialLength=initialLength, 
+        initialSchedules=initialSchedules)
     
     schedules.extend(additional_schedules)
 
