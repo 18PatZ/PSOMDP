@@ -207,6 +207,8 @@ def convertSingleStepMDP(mdp):
 
     return compMDP
 
+
+
 def createCompositeMDP(mdp, discount, checkin_period):
     if checkin_period == 1:
         return convertSingleStepMDP(mdp)
@@ -224,6 +226,33 @@ def createCompositeMDPs(mdp, discount, checkin_period):
             prevPeriodMDP = extendCompositeMDP(mdp, discount, prevPeriodMDP)
         mdps.append(prevPeriodMDP)
     return mdps
+
+
+
+def createCompositeMDPVarying(mdpList, discount, checkin_period):
+    if checkin_period == 1:
+        return convertSingleStepMDP(mdpList[0])
+
+    prevPeriodMDP = createCompositeMDPVarying(mdpList[:-1], discount, checkin_period-1) #recursive, make composite MDP of prefix
+    return extendCompositeMDP(mdpList[-1], discount, prevPeriodMDP) #extend prefix wiht last MDP
+
+# create compMDP where transitions differ based on time within checkin period - one MDP per step
+def createCompositeMDPsVarying(mdpList, discount, checkin_period):
+    mdps = []
+    prevPeriodMDP = None
+    for c in range(1, checkin_period + 1):
+        mdp = mdpList[c-1]
+        if c == 1:
+            prevPeriodMDP = convertSingleStepMDP(mdp)
+        else:
+            prevPeriodMDP = extendCompositeMDP(mdp, discount, prevPeriodMDP)
+        mdps.append(prevPeriodMDP)
+    return mdps
+
+
+
+
+
 
 def extendCompositeMDP(mdp, discount, prevPeriodMDP, restricted_action_set = None):
     compMDP = MDP([], [], {}, {}, [])
@@ -1871,10 +1900,16 @@ def runExtensionStage(mdp, stage, chains_list, all_chains, compMDPs, greedyCompM
 
 def calculateChainValues(grid, mdp, discount, discount_checkin, start_state, 
                          checkin_periods, chain_length, do_filter, distributions, initialDistribution, margin, 
-                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir, checkinCostFunction, recurring, initialLength, initialSchedules):
+                         bounding_box, drawIntermediate, TRUTH, TRUTH_COSTS, name, title, midpoints, outputDir, 
+                         checkinCostFunction, recurring, initialLength, initialSchedules, mdpList):
     print("Compositing MDPs")
     c_start = time.time()
-    all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
+    
+    if mdpList is None:
+        all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
+    else:
+        all_compMDPs = createCompositeMDPsVarying(mdpList, discount, checkin_periods[-1])
+    
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
 
     print("time to composite MDPs:", time.time() - c_start)
@@ -2495,7 +2530,7 @@ def drawCompares(data, outputDir="output"):
 
 
 
-
+# @Deprecated functions
 def drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_state, checkin_periods, chain_checkins, name):
     all_compMDPs = createCompositeMDPs(mdp, discount, checkin_periods[-1])
     compMDPs = {k: all_compMDPs[k - 1] for k in checkin_periods}
@@ -2678,7 +2713,7 @@ def getData(mdp, schedules, initialDistribution, isMultiplePolicies):
 def runChains(grid, mdp, discount, discount_checkin, start_state, 
     checkin_periods, chain_length, do_filter, margin, distName, startName, 
     distributions, initialDistribution, bounding_box, TRUTH, TRUTH_COSTS, drawIntermediate, midpoints, 
-    outputDir="output", checkinCostFunction=None, recurring=False, additional_schedules=[], initialLength=1, initialSchedules=[]):
+    outputDir="output", checkinCostFunction=None, recurring=False, additional_schedules=[], initialLength=1, initialSchedules=[], mdpList=None):
         
     midpoints.sort(reverse=True)
 
@@ -2718,7 +2753,8 @@ def runChains(grid, mdp, discount, discount_checkin, start_state,
         checkinCostFunction=checkinCostFunction,
         recurring=recurring, 
         initialLength=initialLength, 
-        initialSchedules=initialSchedules)
+        initialSchedules=initialSchedules, 
+        mdpList=mdpList)
     
     schedules.extend(additional_schedules)
 

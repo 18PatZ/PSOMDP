@@ -236,7 +236,7 @@ def gliderMDP(maxSeparation = 4, desiredSeparation = 2, moveProb = 0.9, wallPena
 
 
 
-def runPareto(grid, mdp, start_state, discount, discount_checkin):
+def runPareto(grid, mdpList, start_state, discount, discount_checkin, max_checkin_period):
     additional_schedules = []
 
     # base_strides = [1, 2, 3, 4]
@@ -274,8 +274,10 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
 
     # bounding_box = np.array([[-1.5e6, -1e6], [0.0001, 30]])
     # bounding_box = np.array([[-1000, -900], [0.0001, 300]])
-    bounding_box = np.array([[-1000, -900], [0.0001, 300]])
+    # bounding_box = np.array([[-1000, -900], [0.0001, 300]])
+    bounding_box = np.array([[-990, -880], [0.0001, 250]])
 
+    mdp = mdpList[0]
 
     start_state_index = mdp.states.index(start_state)
 
@@ -307,17 +309,18 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
     # distributions.append(initialDistribution)
     # initialDistribution = initialDistributionCombo
 
-
-    initialLength = 3
+    initialLength = 1
     initialSchedules = []
-    initialName = "pareto-c3-l4-truth-recc_no-alpha_-step2"
-    initSchedBounds, _, _, _ = loadDataChains(initialName, outputDir="../output")
-    for bound in initSchedBounds:
-        strides = []
-        for i in range(1, len(bound.name)-2):
-            strides.append(int(bound.name[i]))
-        sched = Schedule(strides=strides, pi_exec_data=None, pi_checkin_data=None, pi_mid_data=None, is_multi_layer=True)
-        initialSchedules.append(sched)
+    # initialLength = 3
+    # initialSchedules = []
+    # initialName = "pareto-c3-l4-truth-recc_no-alpha_-step2"
+    # initSchedBounds, _, _, _ = loadDataChains(initialName, outputDir="../output")
+    # for bound in initSchedBounds:
+    #     strides = []
+    #     for i in range(1, len(bound.name)-2):
+    #         strides.append(int(bound.name[i]))
+    #     sched = Schedule(strides=strides, pi_exec_data=None, pi_checkin_data=None, pi_mid_data=None, is_multi_layer=True)
+    #     initialSchedules.append(sched)
 
 
     # margins = np.arange(0.01, 0.0251, 0.005)
@@ -353,7 +356,7 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
     for length in lengths:
         print("\n\n  Running length",length,"\n\n")
 
-        truth_name = f"pareto-c3-l8-truth_no-alpha_-step{length}"#None#f"pareto-c3-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
+        truth_name = None#f"pareto-c3-l8-truth-recc_no-alpha_-step7"#None#f"pareto-c3-l{length}-truth_no-alpha_"#"pareto-c4-l4-truth"
         # truth_name = f"pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step17"
         true_fronts, truth_schedules = loadTruth(truth_name, outputDir="../output")
 
@@ -367,11 +370,11 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
             for i in range(repeats):
                 running_time, error, trimmed = runChains(
                     grid, mdp, discount, discount_checkin, start_state,
-                    checkin_periods=[1, 2, 3],
+                    checkin_periods=list(range(1,1+max_checkin_period)),#[1, 2, 3],
                     chain_length=length,
                     do_filter = False,
                     margin = margin,
-                    distName = 'truth' + ('-recc' if recurring else '') + alphas_name,
+                    distName = 'truth-depth' + ('-recc' if recurring else '') + alphas_name,
                     startName = '',
                     distributions = distributions, 
                     initialDistribution = initialDistribution,
@@ -385,7 +388,8 @@ def runPareto(grid, mdp, start_state, discount, discount_checkin):
                     additional_schedules = additional_schedules,
                     recurring=recurring, 
                     initialLength=initialLength, 
-                    initialSchedules=initialSchedules)
+                    initialSchedules=initialSchedules,
+                    mdpList=mdpList)
 
                 running_time_avg += running_time
             running_time_avg /= repeats
@@ -404,21 +408,43 @@ if __name__ == '__main__':
 
     # start = time.time()
 
-    grid, mdp, start_state = gliderMDP(
-        maxSeparation = 4, 
-        desiredSeparation = 2, 
-        moveProb = 0.9, 
-        wallPenalty = -10, 
-        movePenalty = 0, 
-        collidePenalty = -100, 
-        desiredStateReward=5)
+    # grid, mdp, start_state = gliderMDP(
+    #     maxSeparation = 4, 
+    #     desiredSeparation = 2, 
+    #     moveProb = 0.9, 
+    #     wallPenalty = -10, 
+    #     movePenalty = 0, 
+    #     collidePenalty = -100, 
+    #     desiredStateReward=5)
+    grid = None
+    start_state = None
+    
+    mdps = []
+
+    max_checkin_period = 3
+    for i in range(0, max_checkin_period):
+        k = i+1
+        moveProb = 1 - 2 * 0.1 / k # 0.1 drift in each direction at surface depth
+        grid, depthMDP, start_state = gliderMDP(
+            maxSeparation = 4, 
+            desiredSeparation = 2, 
+            moveProb = moveProb, 
+            wallPenalty = -10, 
+            movePenalty = 0, 
+            collidePenalty = -100, 
+            desiredStateReward=5)
+        
+        mdps.append(depthMDP)
 
     discount = math.sqrt(0.99)
     discount_checkin = discount
 
+    # compMDPs = createCompositeMDPsVarying(mdps, discount, max_checkin_period)
+    # print(compMDPs[0].transitions[(4,4)])
 
     # run(grid, mdp, discount, start_state, checkin_period=3, doBranchAndBound=False, 
     #         drawPolicy=True, drawIterations=True, outputPrefix="", doLinearProg=True, 
     #         bnbGreedy=-1, doSimilarityCluster=False, simClusterParams=None, outputDir="../output")
 
-    runPareto(grid, mdp, start_state, discount, discount_checkin)
+    # runPareto(grid, mdp, start_state, discount, discount_checkin)
+    runPareto(grid, mdps, start_state, discount, discount_checkin, max_checkin_period)

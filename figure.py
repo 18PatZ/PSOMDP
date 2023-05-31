@@ -294,8 +294,9 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
         if truth_optimistic_front is not None:
             manhattan_lines(ax, truth_optimistic_front, color="#c7e6d0", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale)
         if truth_realizable_front is not None:
-            manhattan_lines(ax, truth_realizable_front, color="#33ab55", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed")
+            manhattan_lines(ax, truth_realizable_front, color="#33ab55", bounding_box=bounding_box, x_offset=x_offset, x_scale=x_scale, fillcolor="#ededed", linethickness=0.5)
             # scatter(ax, realizable_front, doLabel=True, color="blue", lcolor="black", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
+            scatter(ax, truth_realizable_front, doLabel=True, color="blue", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets, elide=True)
 
     # scatter(ax, points_dominated, doLabel=False, color="orange", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
     
@@ -347,8 +348,8 @@ def drawParetoFront(schedules, is_efficient, optimistic_front, realizable_front,
         #drawL(ax, schedule_points, bounding_box=bounding_box, color="#ff2222", face_color="#ff2222", x_offset=x_offset, x_scale=x_scale)
         #scatter(ax, schedule_points, doLabel=True, color="red", lcolor="gray", arrows=arrows, x_offset=x_offset, x_scale=x_scale, loffsets=loffsets)
 
-    # alpha = 0.53
-    # drawScalarizationLine(schedules, ax, anchor="332*", alpha=alpha)
+    # alpha = 0.76
+    # drawScalarizationLine(schedules, ax, anchor="(212)*", alpha=alpha)
     # drawScalarizationLine(schedules, ax, anchor="3*", alpha=alpha)
     # drawScalarizationLine(schedules, ax, anchor="1*", alpha=alpha)
 
@@ -452,7 +453,9 @@ if __name__ == "__main__":
     #bounding_box = np.array([[-1.56e6, -1e6], [0.0001, 30]])
     # bounding_box = np.array([[-1.56e6, -1.04e6], [5.0001, 28]])
     # bounding_box = np.array([[-1000, -900], [0.0001, 300]])
-    bounding_box = np.array([[-952.2795210898702, -949.436449420723], [97.07854114027103, 101.9800249998421]])
+    #bounding_box = np.array([[-952.2795210898702, -949.436449420723], [97.07854114027103, 101.9800249998421]])
+    # bounding_box = np.array([[-1000, -900], [0.0001, 300]])
+    bounding_box = np.array([[-990, -880], [0.0001, 250]])
     
     # bounding_box = np.array([[-18, -15], [0.0001, 5]])
     # bounding_box = np.array([[-51, -44], [0.0001, 15]])
@@ -460,7 +463,8 @@ if __name__ == "__main__":
     x_offset = 1.56e6
     x_scale = 1/1000
 
-    truth_name = None#"pareto-c3-l4-truth_no-alpha_"
+    s = 3
+    truth_name = f"pareto-c3-l8-truth-recc_no-alpha_-step{s}"#None#"pareto-c3-l4-truth_no-alpha_"
 
     names = [
         # "pareto-c4-l4-uniform_no-alpha_-filtered-margin0.040-step1",
@@ -473,7 +477,7 @@ if __name__ == "__main__":
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step8",
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step14",
         # "pareto-c4-l32-initial_10alpha_-filtered-margin0.000-step16",
-        "pareto-c3-l8-truth_no-alpha_-step6",
+        f"pareto-c3-l8-truth-depth-recc_no-alpha_-step{s}",
         #"pareto-c4-l4-truth_no-alpha_"
         # "pareto-c4-l4-truth_10alpha_"
     ]

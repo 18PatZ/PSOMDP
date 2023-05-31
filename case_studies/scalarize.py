@@ -8,7 +8,7 @@ from figure import *
 import numpy as np
 import math
 
-name = "pareto-c3-l8-truth_no-alpha_-step6"#"pareto-c3-l4-uniform-e_no-alpha_-filtered-margin0.000-step4"
+name = "pareto-c3-l4-truth-recc_no-alpha_-step2"#"pareto-c3-l4-uniform-e_no-alpha_-filtered-margin0.000-step4"
 schedules, is_efficient, optimistic_front, realizable_front = loadDataChains(name, outputDir="../output")
 
 print("Total schedules:", len(schedules))
@@ -39,7 +39,7 @@ fig, ax = plt.subplots()
 
 
 
-alpha = 0.53
+alpha = 0.76
 
 xVals = {"D": [], "N": [], "rD": [], "rN": []}
 yVals = {"D": [], "N": [], "rD": [], "rN": []}
@@ -61,8 +61,10 @@ size = 1
 ax.scatter(xVals["D"], yVals["D"], c="orange", s=size, marker='.', linewidths=0)    
 ax.scatter(xVals["N"], yVals["N"], c="green", s=size, marker='.', linewidths=0)
 
-ax.scatter(xVals["rD"], yVals["rD"], c="purple", s=size)    
-ax.scatter(xVals["rN"], yVals["rN"], c="blue", s=size)
+# ax.scatter(xVals["rD"], yVals["rD"], c="purple", s=size)    
+# ax.scatter(xVals["rN"], yVals["rN"], c="blue", s=size)
+ax.scatter(xVals["rD"], yVals["rD"], c="orange", s=size)    
+ax.scatter(xVals["rN"], yVals["rN"], c="green", s=size)
 
 for key in ["D", "N"]:
     offset = (0, -20)
@@ -117,7 +119,7 @@ for key in ["D", "N"]:
 name="scalarization_" + name
 # bounding_box=np.array([[96, 103], [-625.75, -624.75]])#None
 # bounding_box=np.array([[96, 103], [-468.1, -467.2]])
-bounding_box=np.array([[96, 103], [-600, -400]])
+bounding_box=None#np.array([[96, 103], [-600, -400]])
 x_offset=0
 x_scale=1
 outputDir="../output"
