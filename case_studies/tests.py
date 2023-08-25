@@ -417,8 +417,8 @@ def runTwoCadence(checkin1, checkin2, outputDir):
 
 # grid, mdp, discount, start_state = paper2An(3)#splitterGrid(rows = 50, discount=0.99)#paper2An(3)#, 0.9999)
 
-grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, cadence2=3)
-# grid, mdp, discount, start_state = splitterGrid2(rows = 12)
+# grid, mdp, discount, start_state = corridorTwoCadence(n1=3, n2=6, cadence1=2, cadence2=3)
+grid, mdp, discount, start_state = splitterGrid2(rows = 12)
 discount_checkin = discount
 
 if False:
@@ -521,7 +521,7 @@ if False:
 
 #run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=False) # VI
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=True, doLinearProg=False) # BNB
-# _, policy, _, compMDP = run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True) # LP
+# _, policy, _, compMDP = run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True, outputDir="../output") # LP
 
 # run(grid, mdp, discount, start_state, checkin_period, doBranchAndBound=False, doLinearProg=True, 
 #     doSimilarityCluster=True, simClusterParams=(7, 1e-5)) # LP w/ similarity clustering
@@ -544,7 +544,7 @@ for y in range(len(grid)):
 # hitting_checkins = expectedMarkovHittingTime(mdp, markov, target_state, 1)
 # print("Hitting time:", hitting_checkins[mdp.states.index(start_state)])
 
-if False:
+if True:
     # start_state = (8, 11)
     # drawChainPolicy(grid, mdp, discount, start_state, target_state, 
     #     checkin_periods=[1, 2, 3, 4], 
@@ -553,16 +553,22 @@ if False:
 
     # front = ["21*", "221*", "2221*", "22221*", "22112*", "2212*", "11213*", "2213*", "23*", "23334*", "33334*", "43334*", "3334*", "4334*", "434*", "4434*", "44434*"]
     # front = ["3*", "23*", "223*", "2223*", "22223*", "222223*"]
-    front = ["223*"]
+    front = ["2*", "3*"]
+    for i in range(11):
+        s = ""
+        for j in range(i+1):
+            s += "2"
+        front.append(s + "3*")
+    print(front)
     for c in front:
         checkins = []
         for l in c[:-1]:
             checkins.append(int(l))
         drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_state, 
-            checkin_periods=[1, 2, 3, 4], 
+            checkin_periods=[1, 2, 3],#, 4], 
             chain_checkins=checkins, 
-            # name="output/policy-chain-splitter3-" + c[:-1])
-            name="output/policy-chain-corridor-" + c[:-1])
+            name="../output/policy-chain-splitter-" + c[:-1])
+            #name="output/policy-chain-corridor-" + c[:-1])
     
     exit()
     
@@ -715,7 +721,7 @@ if False:
 
 # if True:
 #     exit()
-if True:
+if False:
     start_state_index = mdp.states.index(start_state)
 
     distributions = []

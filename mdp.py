@@ -1769,7 +1769,7 @@ def createRecurringChain(discount, discount_checkin, compMDPs, greedyCompMDPs, s
     else:
         values = value_layers[0]
         eval_normal = checkinCostFunction(strides, discount_checkin)
-        sched = Schedule(strides=strides, pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None, is_multi_layer=True)
+        sched = Schedule(strides=strides, pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None, opt_policies=[], opt_values=[], is_multi_layer=True)
 
     return sched
 
@@ -1799,10 +1799,10 @@ def createChainTail(discount, discount_checkin, compMDPs, greedyCompMDPs, k, mid
 
             midpoint_evals.append((eval_blend_exec, eval_blend_check))
         
-        sched = Schedule(strides=[k], pi_exec_data=(values, eval_normal), pi_checkin_data=(eval_greedy, values_greedy), pi_mid_data=midpoint_evals)
+        sched = Schedule(strides=[k], pi_exec_data=(values, eval_normal), pi_checkin_data=(eval_greedy, values_greedy), pi_mid_data=midpoint_evals, opt_policies=[policy], opt_values=[values])
     else:
         eval_normal = checkinCostFunction([k], discount_checkin) # single value for all policies and states - so we only need pi^exec
-        sched = Schedule(strides=[k], pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None)
+        sched = Schedule(strides=[k], pi_exec_data=(values, eval_normal), pi_checkin_data=None, pi_mid_data=None, opt_policies=[policy], opt_values=[values])
 
     return sched
 
@@ -1818,6 +1818,12 @@ def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, sched, k, 
     old_values = sched.pi_exec_data[0]
     new_values = runOneValueIterationPass(old_values, discount_t, compMDP)
     policy = policyFromValues(compMDP, new_values, discount_t)
+
+    opt_policies = list(sched.opt_policies)
+    opt_policies.insert(0, policy)
+
+    opt_values = list(sched.opt_values)
+    opt_values.insert(0, new_values)
     
     if checkinCostFunction is None:
         greedyMDP = greedyCompMDPs[k]
@@ -1849,14 +1855,18 @@ def extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, sched, k, 
             strides=chain_checkins, 
             pi_exec_data=(new_values, new_eval), 
             pi_checkin_data=(new_eval_greedy, new_values_greedy), 
-            pi_mid_data=new_midpoint_evals)
+            pi_mid_data=new_midpoint_evals,
+            opt_policies=opt_policies,
+            opt_values=opt_values)
     else:
         new_eval = checkinCostFunction(chain_checkins, discount_checkin) # single value for all policies and states - so we only need pi^exec
         
         new_sched = Schedule(
             strides=chain_checkins, 
             pi_exec_data=(new_values, new_eval), 
-            pi_checkin_data=None, pi_mid_data=None)
+            pi_checkin_data=None, pi_mid_data=None,
+            opt_policies=opt_policies,
+            opt_values=opt_values)
     
     return new_sched
 
@@ -2541,138 +2551,199 @@ def drawChainPolicy(grid, mdp, discount, discount_checkin, start_state, target_s
     greedyCompMDPs = {k: convertCompToCheckinMDP(grid, compMDPs[k], k, discount_checkin) for k in checkin_periods}
 
     i = len(chain_checkins) - 1
-    chain = createChainTail(discount, discount_checkin, target_state, compMDPs, greedyCompMDPs, chain_checkins[i])
+    sched = createChainTail(discount, discount_checkin, compMDPs, greedyCompMDPs, chain_checkins[i], midpoints=[], checkinCostFunction=None)
     while i >= 0:
-        chain = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, chain, chain_checkins[i])
+        sched = extendChain(discount, discount_checkin, compMDPs, greedyCompMDPs, sched, chain_checkins[i], midpoints=[], checkinCostFunction=None)
         i -= 1
     
     #chain = ([k], values, [policy], (hitting_time, hitting_checkins))
-    policies = chain[2]
-    values = chain[1]
-    sequence = chain[0]
+    # policies = chain[2]
+    # values = chain[1]
+    # sequence = chain[0]
 
-    max_value = None
-    min_value = None
+    policies = sched.opt_policies
+    values = sched.pi_exec_data[0]
+    # all_values = sched.opt_values
+    sequence = sched.strides
 
-    if len(values) > 0:
-        min_value = min(values.values())
-        max_value = max(values.values())
+    # c_state = start_state
+    # c_stage = 0
 
-    G = nx.MultiDiGraph()
+    # traversed = []
+    # while True:
+    #     if c_state == target_state:
+    #         break
 
-    for state in mdp.states:
-        G.add_node(state)
+    #     traversed.append(c_state)
 
-    #'''
-    for y in range(len(grid)):
-        for x in range(len(grid[y])):
-            state = (x, y)
-            state_type = grid[y][x]
+    #     policy = policies[c_stage]
+    #     action = policy[c_state]
+    #     k = sequence[c_stage]
+    #     compMDP = compMDPs[k]
 
-            if state_type == TYPE_WALL:
-                G.add_node(state)
-    #'''
-
-    current_state = start_state
-    stage = 0
-    while True:
-        if current_state == target_state:
-            break
-
-        policy = policies[stage]
-        action = policy[current_state]
-        k = sequence[stage]
-        compMDP = compMDPs[k]
-
-        maxProb = -1
-        maxProbEnd = None
+    #     maxProb = -1
+    #     maxProbEnd = None
         
-        for end in compMDP.transitions[current_state][action].keys():
-            probability = compMDP.transitions[current_state][action][end]
-
-            if probability > maxProb:
-                maxProb = probability
-                maxProbEnd = end
+    #     for end in compMDP.transitions[c_state][action].keys():
+    #         probability = compMDP.transitions[c_state][action][end]
+    #         if probability > maxProb:
+    #             maxProb = probability
+    #             maxProbEnd = end
         
-        if maxProbEnd is not None:
-            end = maxProbEnd
-            probability = maxProb
-            color = "blue"
-            G.add_edge(current_state, end, prob=probability, label=f"{action}: " + "{:.2f}".format(probability), color=color, fontcolor=color)
+    #     if maxProbEnd is not None:
+    #         end = maxProbEnd
+    #         probability = maxProb
+    #         c_state = end
+    #         if c_stage < len(sequence) - 1:
+    #             c_stage += 1
+
+    # c_stage = 0
+    # print(traversed)
+    # for c_state2 in traversed:
+
+    #     current_state = c_state2#start_state
+    #     stage = c_stage#0
+
+    #     if stage >= len(sequence) - 1:
+    #         stage = len(sequence) - 1
+
+        # values = all_values[stage]
+        # values = {st: 0 for st in all_values[stage]}
+        # k = sequence[stage]
+        # mdp = compMDP[k]
+        # for action in mdp.actions:
+        #     if action in mdp.transitions[state]:
+        #         expected_value = mdp.rewards[state][action]
+        #         for end_state in mdp.transitions[state][action].keys():
+        #             prob = mdp.transitions[state][action][end_state]
+        #             expected_value += discount * prob * values[end_state]
             
-            current_state = end
-            if stage < len(sequence) - 1:
-                stage += 1
-        else:
-            break
+    if True:
+        current_state = start_state
+        stage = 0
 
-    # Build plot
-    fig, ax = plt.subplots(figsize=(8, 8))
-    
-    layout = {}
+        max_value = None
+        min_value = None
 
-    ax.clear()
-    labels = {}
-    edge_labels = {}
-    color_map = []
+        if len(values) > 0:
+            min_value = min(values.values())
+            max_value = max(values.values())
 
-    # G.graph['edge'] = {'arrowsize': '1.0', 'fontsize':'10', 'penwidth': '5'}
-    # G.graph['graph'] = {'scale': '3', 'splines': 'true'}
-    G.graph['edge'] = {'arrowsize': '1.0', 'fontsize':'10', 'penwidth': '5'}
-    G.graph['graph'] = {'scale': '3', 'splines': 'true'}
+        G = nx.MultiDiGraph()
 
-    A = to_agraph(G)
+        for state in mdp.states:
+            G.add_node(state)
 
-    A.node_attr['style']='filled'
+        #'''
+        for y in range(len(grid)):
+            for x in range(len(grid[y])):
+                state = (x, y)
+                state_type = grid[y][x]
 
-    for node in G.nodes():
-        labels[node] = f"{stateToStr(node)}"
+                if state_type == TYPE_WALL:
+                    G.add_node(state)
+        #'''
 
-        layout[node] = (node[0], -node[1])
+        while True:
+            if current_state == target_state:
+                break
 
-        state_type = grid[node[1]][node[0]]
+            policy = policies[stage]
+            action = policy[current_state]
+            k = sequence[stage]
+            compMDP = compMDPs[k]
 
-        n = A.get_node(node)
-        n.attr['color'] = fourColor(node)
+            maxProb = -1
+            maxProbEnd = None
+            
+            for end in compMDP.transitions[current_state][action].keys():
+                probability = compMDP.transitions[current_state][action][end]
 
-        if state_type != TYPE_WALL:
-            n.attr['xlabel'] = "{:.4f}".format(values[node])
+                if probability > maxProb:
+                    maxProb = probability
+                    maxProbEnd = end
+            
+            if maxProbEnd is not None:
+                end = maxProbEnd
+                probability = maxProb
+                color = "blue"
+                G.add_edge(current_state, end, prob=probability, label=f"{action}: " + "{:.2f}".format(probability), color=color, fontcolor=color)
+                
+                current_state = end
+                if stage < len(sequence) - 1:
+                    stage += 1
+            else:
+                break
 
-        color = None
-        if state_type == TYPE_WALL:
-            color = "#6a0dad"
-        elif min_value is None and state_type == TYPE_GOAL:
-            color = "#00FFFF"
-        elif min_value is None:
-            color = "#FFA500"
-        else:
-            value = values[node]
-            frac = (value - min_value) / (max_value - min_value)
-            hue = frac * 250.0 / 360.0 # red 0, blue 1
+        # Build plot
+        fig, ax = plt.subplots(figsize=(8, 8))
+        
+        layout = {}
 
-            col = colorsys.hsv_to_rgb(hue, 1, 1)
-            col = (int(col[0] * 255), int(col[1] * 255), int(col[2] * 255))
-            color = '#%02x%02x%02x' % col
+        ax.clear()
+        labels = {}
+        edge_labels = {}
+        color_map = []
 
-        n.attr['fillcolor'] = color
+        # G.graph['edge'] = {'arrowsize': '1.0', 'fontsize':'10', 'penwidth': '5'}
+        # G.graph['graph'] = {'scale': '3', 'splines': 'true'}
+        G.graph['edge'] = {'arrowsize': '1.0', 'fontsize':'10', 'penwidth': '5'}
+        G.graph['graph'] = {'scale': '3', 'splines': 'true'}
 
-        color_map.append(color)
+        A = to_agraph(G)
 
-    for s, e, d in G.edges(data=True):
-        edge_labels[(s, e)] = "{:.2f}".format(d['prob'])
+        A.node_attr['style']='filled'
 
-    # Set the title
-    #ax.set_title("MDP")
+        for node in G.nodes():
+            labels[node] = f"{stateToStr(node)}"
 
-    #plt.show()
-    m = 0.7#1.5
-    for k,v in layout.items():
-        A.get_node(k).attr['pos']='{},{}!'.format(v[0]*m,v[1]*m)
+            layout[node] = (node[0], -node[1])
 
-    #A.layout('dot')
-    A.layout(prog='neato')
-    # A.draw(name + '.png')#, prog="neato")
-    A.draw(name + '.pdf')#, prog="neato")
+            state_type = grid[node[1]][node[0]]
+
+            n = A.get_node(node)
+            n.attr['color'] = fourColor(node)
+
+            if state_type != TYPE_WALL:
+                n.attr['xlabel'] = "{:.4f}".format(values[node])
+
+            color = None
+            if state_type == TYPE_WALL:
+                color = "#6a0dad"
+            elif min_value is None and state_type == TYPE_GOAL:
+                color = "#00FFFF"
+            elif min_value is None:
+                color = "#FFA500"
+            else:
+                value = values[node]
+                frac = (value - min_value) / (max_value - min_value)
+                hue = frac * 250.0 / 360.0 # red 0, blue 1
+
+                col = colorsys.hsv_to_rgb(hue, 1, 1)
+                col = (int(col[0] * 255), int(col[1] * 255), int(col[2] * 255))
+                color = '#%02x%02x%02x' % col
+
+            n.attr['fillcolor'] = color
+
+            color_map.append(color)
+
+        for s, e, d in G.edges(data=True):
+            edge_labels[(s, e)] = "{:.2f}".format(d['prob'])
+
+        # Set the title
+        #ax.set_title("MDP")
+
+        #plt.show()
+        m = 0.7#1.5
+        for k,v in layout.items():
+            A.get_node(k).attr['pos']='{},{}!'.format(v[0]*m,v[1]*m)
+
+        #A.layout('dot')
+        A.layout(prog='neato')
+        # A.draw(name + '.png')#, prog="neato")
+        # A.draw(name + f'-{c_stage}' '.pdf')#, prog="neato")
+        A.draw(name + '.pdf')#, prog="neato")
+        # c_stage += 1
 
 
 def getData(mdp, schedules, initialDistribution, isMultiplePolicies):
