@@ -2,7 +2,7 @@ import numpy as np
 
 class Schedule:
     
-    def __init__(self, strides, pi_exec_data, pi_checkin_data, pi_mid_data, opt_policies=[], opt_values=[], is_multi_layer=False):
+    def __init__(self, strides, pi_exec_data, pi_checkin_data, pi_mid_data, opt_policies=[], opt_values=[], is_multi_layer=False, recc_strides=[]):
         self.strides = strides
         self.pi_exec_data = pi_exec_data
         self.pi_checkin_data = pi_checkin_data
@@ -10,6 +10,8 @@ class Schedule:
         self.is_multi_layer = is_multi_layer
         self.opt_policies = opt_policies
         self.opt_values = opt_values
+
+        self.recc_strides = recc_strides
 
         self.set_bounds()
 
