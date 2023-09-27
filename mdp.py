@@ -1093,7 +1093,7 @@ def runMultiLayer(grid, mdp, discount, start_state, strides, all_compMDPs=None, 
     policy = None
     values = None
     
-    start = time.time()
+    # start = time.time()
     elapsed = None
 
     if all_compMDPs is None:
@@ -1103,19 +1103,19 @@ def runMultiLayer(grid, mdp, discount, start_state, strides, all_compMDPs=None, 
     
     discount_t = [pow(discount, k) for k in strides]
 
-    print("MDP composite time:", time.time() - start)
+    # print("MDP composite time:", time.time() - start)
 
     restricted_action_set = None
 
-    l1 = time.time()
+    # l1 = time.time()
     policy_layers, value_layers = linearProgrammingSolveMultiLayer(compMDPs, discount_t, restricted_action_set = restricted_action_set)
     
-    print("MDP linear programming time:", time.time() - l1)
+    # print("MDP linear programming time:", time.time() - l1)
     
-    elapsed = time.time() - start
-    print("MDP total time:", elapsed)
+    # elapsed = time.time() - start
+    # print("MDP total time:", elapsed)
 
-    print("Start state value:",value_layers[0][start_state])
+    # print("Start state value:",value_layers[0][start_state])
 
     if drawPolicy:
         name = "".join([str(k) for k in strides])
@@ -1773,6 +1773,19 @@ def createRecurringChain(discount, discount_checkin, compMDPs, greedyCompMDPs, s
 
     return sched
 
+# def createHybridBase(discount, compMDPs, k):
+#     discount_t = pow(discount, k)
+#     compMDP = compMDPs[k]
+
+#     policy, values = linearProgrammingSolve(compMDP, discount_t)
+#     return Schedule(strides = [], recc_strides = [k], pi_exec_data=(values, None), pi_checkin_data=None, pi_mid_data=None, opt_policies=[policy], opt_values=[values])
+
+def createRecurring(discount, compMDPs, k):
+    discount_t = pow(discount, k)
+    compMDP = compMDPs[k]
+
+    policy, values = linearProgrammingSolve(compMDP, discount_t)
+    return Schedule(strides = [], recc_strides = [k], pi_exec_data=(values, None), pi_checkin_data=None, pi_mid_data=None, opt_policies=[policy], opt_values=[values])
 
 def createChainTail(discount, discount_checkin, compMDPs, greedyCompMDPs, k, midpoints, checkinCostFunction):
     discount_t = pow(discount, k)

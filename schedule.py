@@ -21,7 +21,10 @@ class Schedule:
             name += str(checkin)
 
         if self.is_multi_layer:
-            name = f"({name})*"
+            leading = ''.join(list(map(str, self.strides)))
+            recc = ''.join(list(map(str, self.recc_strides)))
+            
+            name = f"{leading}({recc})*"
         else:
             name += "*"
         return name

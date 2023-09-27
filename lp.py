@@ -115,7 +115,7 @@ def linearProgrammingSolveMultiLayer(mdps, discounts, restricted_action_set = No
     
     time_elapsed = (time.time() - time_start)
          
-    print("time to create the model: "+str(time_elapsed))
+    # print("time to create the model: "+str(time_elapsed))
         
     # print("ILP was made") 
         
@@ -128,7 +128,7 @@ def linearProgrammingSolveMultiLayer(mdps, discounts, restricted_action_set = No
 
     time_elapsed = (time.time() - time_start)
          
-    print("time to solve the model: "+str(time_elapsed))
+    # print("time to solve the model: "+str(time_elapsed))
 
     # print(lp.solution) 
     # print(lp.solution.get_value_dict(v))
